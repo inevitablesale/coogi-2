@@ -143,34 +143,50 @@ class JobScraper:
         """Search for jobs using external JobSpy API or demo data"""
         try:
             # Use external JobSpy API for real job scraping
+            search_term = search_params.get("search_term", "software engineer")
+            location = search_params.get("location", "")
+            
+            # Try broader search if no location specified
+            if not location:
+                location = "United States"
+            
             api_params = {
-                "query": search_params.get("search_term", "software engineer"),
-                "location": search_params.get("location", "remote"),
+                "query": search_term,
+                "location": location,
                 "sites": ",".join(search_params.get("site_name", ["linkedin", "indeed", "zip_recruiter"])),
-                "enforce_annual_salary": search_params.get("enforce_annual_salary", True),
+                "enforce_annual_salary": search_params.get("enforce_annual_salary", False),  # Less restrictive
                 "results_wanted": min(max_results, search_params.get("results_wanted", 100)),
-                "hours_old": search_params.get("hours_old", 24)
+                "hours_old": search_params.get("hours_old", 72)  # Broader time range
             }
             
             logger.info(f"Calling JobSpy API with params: {api_params}")
             response = requests.get(self.jobspy_api_url, params=api_params, timeout=30)
             
             if response.status_code == 200:
-                jobs_data = response.json()
-                if jobs_data and len(jobs_data) > 0:
+                response_data = response.json()
+                logger.info(f"JobSpy API response structure: {list(response_data.keys()) if isinstance(response_data, dict) else 'Not a dict'}")
+                
+                # Handle the new API response format
+                if isinstance(response_data, dict) and "jobs" in response_data:
+                    jobs_list = response_data["jobs"]
+                    total_jobs = response_data.get("total_jobs", len(jobs_list))
+                    logger.info(f"JobSpy API found {total_jobs} total jobs, processing {len(jobs_list)} jobs")
+                elif isinstance(response_data, list):
+                    jobs_list = response_data
+                else:
+                    logger.warning("Unexpected API response format")
+                    return self._get_demo_jobs_filtered(search_params, max_results)
+                
+                if jobs_list and len(jobs_list) > 0:
                     # Convert API response to our expected format
                     formatted_jobs = []
-                    jobs_list = jobs_data if isinstance(jobs_data, list) else [jobs_data]
                     
-                    for job in jobs_list:
-                        if len(formatted_jobs) >= max_results:
-                            break
-                            
+                    for job in jobs_list[:max_results]:
                         formatted_job = {
                             "title": job.get("title", ""),
                             "company": job.get("company", ""),
                             "location": self._format_location(job),
-                            "description": job.get("description", ""),
+                            "description": job.get("description", job.get("job_level", "")),
                             "job_url": job.get("job_url", ""),
                             "salary": self._format_salary(job),
                             "date_posted": job.get("date_posted", ""),
@@ -212,16 +228,19 @@ class JobScraper:
     
     def _format_location(self, job: Dict[str, Any]) -> str:
         """Format location information from job data"""
-        location_data = job.get("location", {})
+        location_data = job.get("location", "")
+        
+        # Handle both string and dict location formats
         if isinstance(location_data, dict):
             city = location_data.get("city", "")
             state = location_data.get("state", "")
             country = location_data.get("country", "")
-            
             parts = [part for part in [city, state, country] if part]
             return ", ".join(parts) if parts else ""
+        elif isinstance(location_data, str):
+            return location_data
         else:
-            return str(location_data) if location_data else ""
+            return ""
     
     def _get_demo_jobs_filtered(self, search_params: Dict[str, Any], max_results: int) -> List[Dict[str, Any]]:
         """Get filtered demo jobs"""
