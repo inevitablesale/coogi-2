@@ -13,9 +13,13 @@ class JobScraper:
     def __init__(self):
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if os.getenv("OPENAI_API_KEY") else None
         self.jobspy_api_url = "https://coogi-jobspy-production.up.railway.app/jobs"
+        self.rapidapi_key = os.getenv("RAPIDAPI_KEY")
+        self.rapidapi_host = "fresh-linkedin-scraper-api.p.rapidapi.com"
         
         if not self.openai_client:
             logger.warning("🚫 OpenAI API key not found - AI query parsing unavailable")
+        if not self.rapidapi_key:
+            logger.warning("🚫 RapidAPI key not found - company jobs unavailable")
     
     def parse_query(self, query: str) -> Dict[str, Any]:
         """Parse recruiter query using AI to extract search parameters"""
@@ -113,59 +117,93 @@ class JobScraper:
             "keywords": keywords
         }
     
-    def get_all_company_jobs(self, company_name: str, location: str = "United States", max_results: int = 100) -> List[Dict[str, Any]]:
-        """Get all available jobs from a specific company"""
+    def get_all_company_jobs(self, company_name: str, company_id: str = None, max_pages: int = 3) -> List[Dict[str, Any]]:
+        """Get all available jobs from a specific company using RapidAPI SaleLeads"""
+        if not self.rapidapi_key:
+            logger.error("🚫 RapidAPI key required for company job search")
+            return []
+            
         logger.info(f"🎯 Getting ALL jobs for company: {company_name}")
         
-        # Multiple search strategies to find all company jobs
-        search_terms = [
-            company_name,
-            f"{company_name} careers",
-            f"jobs at {company_name}",
-            f"{company_name} hiring"
-        ]
-        
         all_jobs = []
-        unique_job_urls = set()
         
-        for search_term in search_terms:
-            try:
+        try:
+            headers = {
+                'x-rapidapi-key': self.rapidapi_key,
+                'x-rapidapi-host': self.rapidapi_host
+            }
+            
+            # Iterate through multiple pages to get all jobs
+            for page in range(1, max_pages + 1):
                 params = {
-                    'query': search_term,
-                    'location': location,
-                    'sites': 'linkedin,indeed,zip_recruiter',
-                    'enforce_annual_salary': False,
-                    'results_wanted': max_results // len(search_terms),
-                    'hours_old': 168,  # 1 week old for broader results
+                    'page': page,
+                    'sort_by': 'recent',
+                    'date_posted': 'anytime'
                 }
                 
-                logger.info(f"Searching for '{search_term}' jobs...")
-                response = requests.post(self.jobspy_api_url, json=params, timeout=30)
+                # Use company_id if available, otherwise use company name
+                if company_id:
+                    params['company_id'] = company_id
+                else:
+                    params['company'] = company_name
+                
+                url = f"https://{self.rapidapi_host}/api/v1/company/jobs"
+                
+                logger.info(f"Fetching company jobs page {page} for {company_name}...")
+                response = requests.get(url, headers=headers, params=params, timeout=30)
                 
                 if response.status_code == 200:
                     data = response.json()
-                    jobs = data.get('jobs', [])
                     
-                    # Filter for exact company match and deduplicate
-                    for job in jobs:
-                        job_company = job.get('company', '').strip().lower()
-                        target_company = company_name.lower()
-                        job_url = job.get('job_url', '')
+                    if data.get('success') and data.get('data'):
+                        jobs = data['data']
                         
-                        # Company name matching with fuzzy logic
-                        if (target_company in job_company or 
-                            job_company in target_company or
-                            self._company_names_match(job_company, target_company)) and job_url not in unique_job_urls:
-                            
-                            all_jobs.append(job)
-                            unique_job_urls.add(job_url)
-                            
-            except Exception as e:
-                logger.warning(f"Error searching for '{search_term}': {e}")
-                continue
+                        # Convert to our standard format
+                        for job in jobs:
+                            standardized_job = self._convert_saleleads_job(job)
+                            all_jobs.append(standardized_job)
+                        
+                        logger.info(f"Found {len(jobs)} jobs on page {page}")
+                        
+                        # If we got fewer than 25 jobs, we've reached the end
+                        if len(jobs) < 25:
+                            break
+                    else:
+                        logger.info(f"No more jobs found on page {page}")
+                        break
+                elif response.status_code == 429:
+                    logger.warning("Rate limit hit, stopping company job search")
+                    break
+                else:
+                    logger.error(f"Error fetching company jobs: {response.status_code}")
+                    break
+                    
+        except Exception as e:
+            logger.error(f"Error in company job search: {e}")
+            return []
         
         logger.info(f"✅ Found {len(all_jobs)} total jobs for {company_name}")
         return all_jobs
+    
+    def _convert_saleleads_job(self, job: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert SaleLeads job format to our standard format"""
+        company_info = job.get('company', {})
+        
+        return {
+            'id': job.get('id'),
+            'title': job.get('title'),
+            'company': company_info.get('name', ''),
+            'location': job.get('location', ''),
+            'job_url': job.get('url', ''),
+            'description': '',  # Not provided in this endpoint
+            'salary_min': None,
+            'salary_max': None,
+            'date_posted': job.get('listed_at'),
+            'is_remote': 'remote' in job.get('location', '').lower(),
+            'company_url': company_info.get('url', ''),
+            'company_verified': company_info.get('verified', False),
+            'easy_apply': job.get('is_easy_apply', False)
+        }
     
     def _company_names_match(self, name1: str, name2: str) -> bool:
         """Check if company names are similar (handles Inc, LLC, etc.)"""

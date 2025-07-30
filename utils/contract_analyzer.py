@@ -31,7 +31,7 @@ class ContractAnalyzer:
             'manager': 1.3
         }
 
-    def analyze_contract_opportunities(self, jobs: List[Dict[str, Any]], max_companies: int = 20) -> Dict[str, Any]:
+    def analyze_contract_opportunities(self, jobs: List[Dict[str, Any]], max_companies: int = 20, job_scraper=None) -> Dict[str, Any]:
         """Analyze jobs to identify high-value contract opportunities by company"""
         
         # Group jobs by company
@@ -56,10 +56,38 @@ class ContractAnalyzer:
             
             company_data[company]['jobs'].append(job)
         
-        # Analyze each company
+        # Analyze each company and get ALL their jobs if they look promising
         contract_opportunities = []
         for company, data in company_data.items():
+            # First pass analysis
             opportunity = self._analyze_company_opportunity(data)
+            
+            if opportunity['contract_value_score'] > 30 and job_scraper:  # High-value companies
+                logger.info(f"🎯 High-value company detected: {company} (score: {opportunity['contract_value_score']}) - getting ALL jobs")
+                
+                # Get ALL jobs for this company
+                all_company_jobs = job_scraper.get_all_company_jobs(company)
+                
+                if all_company_jobs and len(all_company_jobs) > len(data['jobs']):
+                    logger.info(f"✅ Found {len(all_company_jobs)} total jobs vs {len(data['jobs'])} initial jobs")
+                    
+                    # Update company data with all jobs
+                    enhanced_data = {
+                        'company': company,
+                        'jobs': all_company_jobs,
+                        'total_positions': 0,
+                        'estimated_budget': 0,
+                        'urgency_score': 0,
+                        'growth_indicators': 0,
+                        'seniority_score': 0,
+                        'locations': set(),
+                        'departments': set()
+                    }
+                    
+                    # Re-analyze with complete job data
+                    opportunity = self._analyze_company_opportunity(enhanced_data)
+                    logger.info(f"📈 Enhanced analysis score: {opportunity['contract_value_score']} (was {data.get('contract_value_score', 0)})")
+            
             if opportunity['contract_value_score'] > 0:
                 contract_opportunities.append(opportunity)
         

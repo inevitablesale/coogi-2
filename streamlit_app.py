@@ -135,6 +135,30 @@ def get_memory_stats():
     except requests.exceptions.RequestException as e:
         return False, str(e)
 
+def analyze_contract_opportunities(query, max_companies=10):
+    """Analyze recruiting contract opportunities"""
+    try:
+        payload = {
+            "query": query,
+            "max_companies": max_companies
+        }
+        response = requests.post(f"{API_BASE_URL}/analyze-contract-opportunities", json=payload, timeout=120)
+        return response.status_code == 200, response.json() if response.status_code == 200 else None
+    except requests.exceptions.RequestException as e:
+        return False, str(e)
+
+def get_company_jobs(company_name, max_pages=3):
+    """Get all jobs for a specific company"""
+    try:
+        payload = {
+            "company_name": company_name,
+            "max_pages": max_pages
+        }
+        response = requests.post(f"{API_BASE_URL}/get-company-jobs", json=payload, timeout=60)
+        return response.status_code == 200, response.json() if response.status_code == 200 else None
+    except requests.exceptions.RequestException as e:
+        return False, str(e)
+
 # Main app
 def main():
     st.title("🤖 MCP: Master Control Program")
@@ -172,7 +196,7 @@ def main():
             st.metric("Messages Generated", stats_data.get("conversions_count", 0))
     
     # Main interface
-    tab1, tab2, tab3, tab4 = st.tabs(["🔍 Job Search", "🏢 Company Analysis", "✉️ Message Generator", "📈 Analytics"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔍 Job Search", "🏢 Company Analysis", "💰 Contract Analyzer", "✉️ Message Generator", "📈 Analytics"])
     
     with tab1:
         st.header("Job Search & Lead Generation")
@@ -360,6 +384,149 @@ def main():
                     st.error(f"Analysis failed: {result}")
     
     with tab3:
+        st.header("💰 Contract Value Analyzer")
+        st.write("Identify high-value recruiting contract opportunities with enhanced company job search")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            contract_query = st.text_input(
+                "Search Query", 
+                placeholder="e.g., software engineer startup, data scientist remote",
+                help="Enter job types to find contract opportunities"
+            )
+        
+        with col2:
+            max_contract_companies = st.number_input("Max Companies", min_value=1, max_value=20, value=5)
+        
+        if st.button("💰 Analyze Contract Opportunities", type="primary", use_container_width=True):
+            if not contract_query.strip():
+                st.error("Please enter a search query")
+            else:
+                with st.spinner("Analyzing contract opportunities and getting ALL company jobs..."):
+                    success, result = analyze_contract_opportunities(contract_query, max_contract_companies)
+                
+                if success and result and isinstance(result, dict):
+                    st.success("Contract analysis completed!")
+                    
+                    # Summary metrics
+                    summary = result.get('summary', {})
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Companies Analyzed", summary.get('total_companies_analyzed', 0))
+                    with col2:
+                        st.metric("High-Value Opportunities", summary.get('high_value_opportunities', 0))
+                    with col3:
+                        total_fees = summary.get('total_recruiting_fees', 0)
+                        st.metric("Total Recruiting Fees", f"${total_fees:,.0f}")
+                    with col4:
+                        avg_positions = summary.get('average_positions_per_company', 0)
+                        st.metric("Avg Positions/Company", f"{avg_positions:.1f}")
+                    
+                    # Contract opportunities
+                    opportunities = result.get('opportunities', [])
+                    if opportunities:
+                        st.subheader("🎯 High-Value Contract Opportunities")
+                        for i, opp in enumerate(opportunities):
+                            company = opp.get('company', '')
+                            score = opp.get('contract_value_score', 0)
+                            positions = opp.get('total_positions', 0)
+                            fees = opp.get('estimated_recruiting_fees', 0)
+                            
+                            with st.expander(f"🏢 {company} - Score: {score:.1f} | {positions} positions | ${fees:,.0f} fees"):
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.write(f"**Total Positions:** {positions}")
+                                    st.write(f"**Estimated Recruiting Fees:** ${fees:,.0f}")
+                                    st.write(f"**Contract Value Score:** {score:.1f}")
+                                    st.write(f"**Urgency Indicators:** {opp.get('urgency_indicators', 0)}")
+                                    st.write(f"**Growth Indicators:** {opp.get('growth_indicators', 0)}")
+                                    st.write(f"**Seniority Score:** {opp.get('seniority_score', 0):.1f}")
+                                
+                                with col2:
+                                    departments = opp.get('departments', [])
+                                    if departments:
+                                        st.write(f"**Departments:** {', '.join(departments)}")
+                                    
+                                    locations = opp.get('locations', [])
+                                    if locations:
+                                        st.write(f"**Locations:** {', '.join(locations[:3])}")
+                                    
+                                    role_types = opp.get('role_types', [])
+                                    if role_types:
+                                        st.write(f"**Role Types:** {', '.join(role_types[:3])}")
+                                
+                                # Recruiting pitch
+                                pitch = opp.get('recruiting_pitch', '')
+                                if pitch:
+                                    st.write("**Generated Pitch:**")
+                                    st.info(pitch)
+                                
+                                # Job details
+                                jobs = opp.get('jobs', [])
+                                if jobs:
+                                    st.write(f"**Job Details ({len(jobs)} positions):**")
+                                    for job in jobs[:5]:  # Show first 5 jobs
+                                        title = job.get('title', 'Unknown')
+                                        location = job.get('location', 'Unknown')
+                                        salary = job.get('estimated_salary', 0)
+                                        fee = job.get('recruiting_fee', 0)
+                                        st.write(f"• {title} | {location} | ${salary:,} salary → ${fee:,.0f} fee")
+                                    
+                                    if len(jobs) > 5:
+                                        st.write(f"... and {len(jobs) - 5} more positions")
+                    else:
+                        st.info("No high-value contract opportunities found. Try adjusting your search criteria.")
+                
+                elif success:
+                    st.warning("Analysis completed but no results found")
+                else:
+                    st.error(f"Analysis failed: {result}")
+        
+        # Company job search tool
+        st.subheader("🔍 Individual Company Job Search")
+        st.write("Get ALL jobs for a specific company (requires RapidAPI key)")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            company_name = st.text_input("Company Name", placeholder="e.g., Shopify, Stripe, OpenAI")
+        with col2:
+            max_pages = st.number_input("Max Pages", min_value=1, max_value=10, value=3)
+        
+        if st.button("🔍 Get All Company Jobs"):
+            if not company_name.strip():
+                st.error("Please enter a company name")
+            else:
+                with st.spinner(f"Fetching ALL jobs for {company_name}..."):
+                    success, result = get_company_jobs(company_name, max_pages)
+                
+                if success and result and isinstance(result, dict):
+                    total_jobs = result.get('total_jobs', 0)
+                    jobs = result.get('jobs', [])
+                    
+                    st.success(f"Found {total_jobs} jobs for {company_name}")
+                    
+                    if jobs:
+                        for i, job in enumerate(jobs[:10]):  # Show first 10
+                            title = job.get('title', 'Unknown')
+                            location = job.get('location', 'Unknown') 
+                            url = job.get('job_url', '')
+                            
+                            if url:
+                                st.write(f"{i+1}. [{title}]({url}) - {location}")
+                            else:
+                                st.write(f"{i+1}. {title} - {location}")
+                        
+                        if total_jobs > 10:
+                            st.write(f"... and {total_jobs - 10} more jobs")
+                    else:
+                        st.info("No jobs found for this company")
+                else:
+                    st.error(f"Company job search failed: {result}")
+    
+    with tab4:
         st.header("Message Generator")
         st.write("Generate personalized outreach messages for specific contacts")
         
@@ -391,7 +558,7 @@ def main():
                 else:
                     st.error(f"Message generation failed: {result}")
     
-    with tab4:
+    with tab5:
         st.header("Platform Analytics")
         
         stats_success, stats_data = get_memory_stats()

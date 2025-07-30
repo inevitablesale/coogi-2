@@ -130,6 +130,16 @@ class ContractAnalysisResponse(BaseModel):
     summary: Dict[str, Any]
     timestamp: str
 
+class CompanyJobsRequest(BaseModel):
+    company_name: str
+    max_pages: int = 3
+
+class CompanyJobsResponse(BaseModel):
+    company: str
+    total_jobs: int
+    jobs: List[Dict[str, Any]]
+    timestamp: str
+
 # API Endpoints
 @app.get("/", response_model=HealthResponse)
 async def health_check():
@@ -586,8 +596,8 @@ async def analyze_contract_opportunities(request: ContractOpportunityRequest):
         if not jobs:
             raise HTTPException(status_code=404, detail="No jobs found matching criteria")
         
-        # Analyze contract opportunities
-        analysis = contract_analyzer.analyze_contract_opportunities(jobs, request.max_companies)
+        # Analyze contract opportunities with enhanced company job search
+        analysis = contract_analyzer.analyze_contract_opportunities(jobs, request.max_companies, job_scraper)
         
         # Convert to response format
         opportunities = [
@@ -602,6 +612,23 @@ async def analyze_contract_opportunities(request: ContractOpportunityRequest):
         
     except Exception as e:
         logger.error(f"Error in contract opportunity analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/get-company-jobs", response_model=CompanyJobsResponse)
+async def get_company_jobs(request: CompanyJobsRequest):
+    """Get all jobs for a specific company using RapidAPI SaleLeads"""
+    try:
+        jobs = job_scraper.get_all_company_jobs(request.company_name, max_pages=request.max_pages)
+        
+        return CompanyJobsResponse(
+            company=request.company_name,
+            total_jobs=len(jobs),
+            jobs=jobs,
+            timestamp=datetime.now().isoformat()
+        )
+        
+    except Exception as e:
+        logger.error(f"Error fetching company jobs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
