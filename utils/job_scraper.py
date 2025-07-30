@@ -131,7 +131,7 @@ class JobScraper:
         
         return {
             "search_term": search_term,
-            "location": location,
+            "location": location if location else "remote",
             "site_name": ["linkedin", "indeed", "zip_recruiter"],
             "job_type": "fulltime",
             "results_wanted": 100,
@@ -144,7 +144,7 @@ class JobScraper:
         try:
             # Use external JobSpy API for real job scraping
             api_params = {
-                "query": search_params.get("search_term", ""),
+                "query": search_params.get("search_term", "software engineer"),
                 "location": search_params.get("location", "remote"),
                 "sites": ",".join(search_params.get("site_name", ["linkedin", "indeed", "zip_recruiter"])),
                 "enforce_annual_salary": search_params.get("enforce_annual_salary", True),

@@ -1,6 +1,6 @@
 # MCP: Master Control Program - Recruiting Automation API
 
-A FastAPI-based recruiting automation platform that scrapes job postings, finds contact information, and generates personalized outreach messages.
+A FastAPI-based recruiting automation platform with Streamlit web interface that scrapes job postings, finds contact information, and generates personalized outreach messages.
 
 ## Features
 
@@ -84,7 +84,7 @@ INSTANTLY_API_KEY=your_instantly_ai_key
 3. **Deploy**
    The `railway.json` and `Procfile` are already configured.
 
-## Local Development
+## Quick Start
 
 1. **Install Dependencies**
    ```bash
@@ -93,18 +93,23 @@ INSTANTLY_API_KEY=your_instantly_ai_key
 
 2. **Set Environment Variables**
    ```bash
-   export OPENAI_API_KEY="your_key"
-   export RAPIDAPI_KEY="your_key"
+   cp .env.example .env
+   # Edit .env with your API keys
    ```
 
-3. **Run Server**
+3. **Run the Application**
    ```bash
+   # Start FastAPI backend
    python api.py
+   
+   # Start Streamlit web interface (in another terminal)
+   streamlit run streamlit_app.py --server.port 8501
    ```
 
-4. **Access API**
-   - API: http://localhost:5000
-   - Documentation: http://localhost:5000/docs
+4. **Access the Application**
+   - **Web Interface**: http://localhost:8501 (User-friendly UI)
+   - **API Documentation**: http://localhost:5000/docs (REST API)
+   - **Health Check**: http://localhost:5000/
 
 ## API Keys Setup
 

@@ -97,6 +97,7 @@ The application follows a modular architecture with clear separation of concerns
 - **API Key Integration**: Configured RapidAPI key for LinkedIn scraping functionality
 - **JobSpy Integration**: Updated to use external JobSpy API (https://coogi-jobspy-production.up.railway.app/jobs) for real job data
 - **Live Data Pipeline**: Configured to use real data until Hunter.io step, only email discovery in demo mode
+- **Streamlit Web Interface**: Added user-friendly web UI on port 8501 for job search and message generation
 - **GitHub Preparation**: Added comprehensive README.md, .gitignore, and documentation
 - **Environment Setup**: Created .env.example for easy configuration management
 
