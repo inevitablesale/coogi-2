@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class EmailGenerator:
     def __init__(self):
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if os.getenv("OPENAI_API_KEY") else None
-        self.demo_mode = not bool(os.getenv("OPENAI_API_KEY"))
+        self.ai_demo_mode = not bool(os.getenv("OPENAI_API_KEY"))
         
         # Demo message templates
         self.demo_templates = {
@@ -67,7 +67,7 @@ Job link: {job_url}"""
     def generate_outreach(self, job_title: str, company: str, contact_title: str, job_url: str, 
                          tone: str = "professional", additional_context: str = "") -> str:
         """Generate personalized outreach message using OpenAI or templates"""
-        if self.demo_mode or not self.openai_client:
+        if self.ai_demo_mode or not self.openai_client:
             return self._generate_demo_message(job_title, company, contact_title, job_url, tone)
         
         try:
@@ -155,7 +155,7 @@ Job link: {job_url}"""
     
     def generate_follow_up(self, original_message: str, job_title: str, company: str) -> str:
         """Generate a follow-up message"""
-        if self.demo_mode or not self.openai_client:
+        if self.ai_demo_mode or not self.openai_client:
             return f"""Hi again,
 
 I wanted to follow up on my previous message about the {job_title} position at {company}. 

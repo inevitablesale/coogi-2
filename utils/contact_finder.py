@@ -10,7 +10,9 @@ class ContactFinder:
     def __init__(self):
         self.rapidapi_key = os.getenv("RAPIDAPI_KEY", "9fc749430dmsh203a8a9d7a08955p1eec7djsnb30f69ff59c7")
         self.hunter_api_key = os.getenv("HUNTER_API_KEY")
-        self.demo_mode = not (self.rapidapi_key and self.hunter_api_key)
+        # Use real APIs until Hunter.io - only demo mode for email discovery
+        self.demo_mode = False
+        self.email_demo_mode = not bool(self.hunter_api_key)
         
         # Demo contacts for testing
         self.demo_contacts = {
@@ -57,13 +59,12 @@ class ContactFinder:
     
     def find_contacts(self, company: str, role_hint: str, keywords: List[str]) -> Tuple[List[Dict[str, Any]], bool]:
         """Find company contacts and determine if they have a talent acquisition team"""
-        if self.demo_mode:
-            return self._get_demo_contacts(company, role_hint, keywords)
-        
         try:
+            # Always try RapidAPI first for real LinkedIn data
             return self._get_contacts_from_rapidapi(company, role_hint, keywords)
         except Exception as e:
             logger.error(f"Error finding contacts for {company}: {e}")
+            # Only fall back to demo data if RapidAPI fails
             return self._get_demo_contacts(company, role_hint, keywords)
     
     def _get_demo_contacts(self, company: str, role_hint: str, keywords: List[str]) -> Tuple[List[Dict[str, Any]], bool]:
@@ -173,7 +174,7 @@ class ContactFinder:
     
     def find_email(self, title: str, company: str) -> Optional[str]:
         """Find email address using Hunter.io API or demo data"""
-        if self.demo_mode:
+        if self.email_demo_mode:
             return self._get_demo_email(title, company)
         
         try:

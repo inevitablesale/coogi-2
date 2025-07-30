@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class JobScraper:
     def __init__(self):
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if os.getenv("OPENAI_API_KEY") else None
-        self.demo_mode = not bool(os.getenv("OPENAI_API_KEY"))
+        self.ai_demo_mode = not bool(os.getenv("OPENAI_API_KEY"))
         self.jobspy_api_url = "https://coogi-jobspy-production.up.railway.app/jobs"
         
         # Demo jobs for testing
@@ -66,8 +66,8 @@ class JobScraper:
     
     def parse_query(self, query: str) -> Dict[str, Any]:
         """Parse recruiter query using AI to extract search parameters"""
-        if self.demo_mode or not self.openai_client:
-            # Fallback parsing for demo mode
+        if self.ai_demo_mode or not self.openai_client:
+            # Fallback parsing when OpenAI not available
             return self._fallback_parse_query(query)
         
         system_prompt = """
@@ -238,8 +238,8 @@ class JobScraper:
     
     def extract_keywords(self, text: str) -> List[str]:
         """Extract relevant keywords from job description"""
-        if self.demo_mode or not self.openai_client:
-            # Fallback keyword extraction
+        if self.ai_demo_mode or not self.openai_client:
+            # Fallback keyword extraction when OpenAI not available
             return self._fallback_extract_keywords(text)
         
         try:

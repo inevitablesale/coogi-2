@@ -77,7 +77,7 @@ The application follows a modular architecture with clear separation of concerns
 ### Current State
 - **Development**: FastAPI server with auto-generated documentation
 - **Configuration**: Environment variables for API key management, RapidAPI key configured
-- **Error Handling**: Graceful degradation to demo mode when APIs unavailable
+- **Error Handling**: Uses live APIs with graceful fallback only for email discovery
 
 ### Production Considerations
 - **Railway Deployment**: Configured with railway.json and Procfile for seamless deployment
@@ -96,6 +96,7 @@ The application follows a modular architecture with clear separation of concerns
 - **Railway Configuration**: Added railway.json, Procfile, and deployment configuration
 - **API Key Integration**: Configured RapidAPI key for LinkedIn scraping functionality
 - **JobSpy Integration**: Updated to use external JobSpy API (https://coogi-jobspy-production.up.railway.app/jobs) for real job data
+- **Live Data Pipeline**: Configured to use real data until Hunter.io step, only email discovery in demo mode
 - **GitHub Preparation**: Added comprehensive README.md, .gitignore, and documentation
 - **Environment Setup**: Created .env.example for easy configuration management
 

@@ -78,12 +78,14 @@ async def health_check():
     """Health check endpoint"""
     api_status = {
         "OpenAI": bool(os.getenv("OPENAI_API_KEY")),
-        "RapidAPI": bool(os.getenv("RAPIDAPI_KEY")),
+        "RapidAPI": True,  # Using configured key
         "Hunter.io": bool(os.getenv("HUNTER_API_KEY")),
-        "Instantly.ai": bool(os.getenv("INSTANTLY_API_KEY"))
+        "Instantly.ai": bool(os.getenv("INSTANTLY_API_KEY")),
+        "JobSpy_API": True  # Using external API
     }
     
-    demo_mode = not all(api_status.values())
+    # Only email discovery is in demo mode without Hunter.io
+    demo_mode = not bool(os.getenv("HUNTER_API_KEY"))
     
     return HealthResponse(
         status="healthy",

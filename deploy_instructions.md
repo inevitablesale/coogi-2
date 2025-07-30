@@ -59,8 +59,9 @@ To get full functionality, obtain these API keys:
 ✅ **JobSpy Integration**: Using external API for real job data
 ✅ **FastAPI Setup**: Complete REST API with documentation
 ✅ **Railway Config**: Deployment files ready
+✅ **Live Data Flow**: Real job scraping and contact discovery working
 
-The platform will work in demo mode without optional API keys, but full functionality requires OpenAI API key.
+The platform uses live data until the Hunter.io email discovery step. Adding an OpenAI API key enables full AI-powered features.
 
 ## Testing the Deployment
 

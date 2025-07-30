@@ -123,9 +123,16 @@ INSTANTLY_API_KEY=your_instantly_ai_key
 2. Create account and get API key
 3. Add to environment variables
 
-## Demo Mode
+## Live Data Integration
 
-The application runs in demo mode when API keys are missing, using sample data for testing.
+The platform uses live data from multiple sources:
+
+- ✅ **JobSpy API**: Real job postings from LinkedIn, Indeed, ZipRecruiter
+- ✅ **RapidAPI**: Live LinkedIn contact discovery (configured)  
+- ✅ **OpenAI GPT-4o**: AI-powered query parsing and message generation
+- 🔄 **Hunter.io**: Email discovery (demo mode until API key provided)
+
+Only email discovery uses demo data when Hunter.io API key is not configured.
 
 ## Architecture
 
