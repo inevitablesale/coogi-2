@@ -88,73 +88,70 @@ class ContactFinder:
         return final_contacts, has_ta_team
     
     def _get_contacts_from_rapidapi(self, company: str, role_hint: str, keywords: List[str]) -> Tuple[List[Dict[str, Any]], bool]:
-        """Get company contacts from RapidAPI LinkedIn scraper"""
+        """Get company contacts from RapidAPI SaleLeads LinkedIn scraper"""
         try:
             logger.info(f"Attempting RapidAPI contact discovery for company: {company}")
-            profile_url = "https://linkedin-company-data.p.rapidapi.com/api/v1/company/profile"
-            people_url = "https://linkedin-company-data.p.rapidapi.com/api/v1/company/people"
+            people_url = "https://fresh-linkedin-scraper-api.p.rapidapi.com/api/v1/company/people"
             headers = {
                 "X-RapidAPI-Key": self.rapidapi_key,
-                "X-RapidAPI-Host": "linkedin-company-data.p.rapidapi.com"
+                "X-RapidAPI-Host": "fresh-linkedin-scraper-api.p.rapidapi.com"
             }
             
-            # Get company profile
-            logger.info(f"Calling RapidAPI profile endpoint for: {company}")
-            profile_resp = requests.get(profile_url, params={"company": company}, headers=headers, timeout=10)
-            logger.info(f"RapidAPI profile response: {profile_resp.status_code}")
-            
-            if profile_resp.status_code != 200:
-                logger.warning(f"RapidAPI profile failed with status {profile_resp.status_code}: {profile_resp.text[:200]}")
-                logger.info(f"RapidAPI unavailable, using demo contacts for {company}")
-                return self._get_demo_contacts(company, role_hint, keywords)
-                
-            profile_data = profile_resp.json()
-            company_id = profile_data.get("data", {}).get("id")
-            logger.info(f"Found company ID: {company_id}")
-            
-            if not company_id:
-                logger.warning(f"No company ID found for {company}, using demo data")
-                return self._get_demo_contacts(company, role_hint, keywords)
-
-            # Get company people
-            logger.info(f"Calling RapidAPI people endpoint for company ID: {company_id}")
-            people_resp = requests.get(people_url, params={"company_id": company_id, "page": 1}, headers=headers, timeout=10)
-            logger.info(f"RapidAPI people response: {people_resp.status_code}")
+            # Get company people directly by company name
+            logger.info(f"Calling SaleLeads API people endpoint for: {company}")
+            people_resp = requests.get(people_url, params={"company": company, "page": 1}, headers=headers, timeout=15)
+            logger.info(f"SaleLeads API response: {people_resp.status_code}")
             
             if people_resp.status_code != 200:
-                logger.warning(f"RapidAPI people failed with status {people_resp.status_code}: {people_resp.text[:200]}")
+                logger.warning(f"SaleLeads API failed with status {people_resp.status_code}: {people_resp.text[:200]}")
+                logger.info(f"SaleLeads API unavailable, using demo contacts for {company}")
                 return self._get_demo_contacts(company, role_hint, keywords)
                 
             people_data = people_resp.json()
+            
+            # Check if the API call was successful
+            if not people_data.get("success", False):
+                logger.warning(f"SaleLeads API returned unsuccessful response for {company}")
+                return self._get_demo_contacts(company, role_hint, keywords)
+            
             people = people_data.get("data", [])
-            logger.info(f"Found {len(people)} people from RapidAPI")
+            logger.info(f"Found {len(people)} people from SaleLeads API for {company}")
 
             # Rank contacts by relevance
-            dynamic_keywords = [role_hint.lower()] + keywords + ["recruiting", "talent", "people", "founder", "cto", "ceo"]
+            dynamic_keywords = [role_hint.lower()] + [k.lower() for k in keywords] + ["recruiting", "talent", "people", "founder", "cto", "ceo", "vp", "director", "manager", "head"]
             ranked = []
             
             for p in people:
-                title = p.get("title", "").lower()
-                score = max([self.title_rank.get(t, 0) for t in title.split() if t in self.title_rank], default=0)
+                title = (p.get("title") or "").lower()
+                full_name = p.get("full_name") or "LinkedIn Member"
+                
+                # Calculate base score from title keywords
+                title_words = title.split()
+                score = max([self.title_rank.get(word, 0) for word in title_words if word in self.title_rank], default=0)
                 
                 # Add bonus for keyword matches
                 keyword_matches = sum(1 for k in dynamic_keywords if k in title)
                 score += keyword_matches * 2
                 
-                if any(k in title for k in dynamic_keywords):
+                # Include contacts with relevant titles or high-ranking positions
+                if (any(k in title for k in dynamic_keywords) or 
+                    any(rank_word in title for rank_word in ["engineer", "developer", "manager", "director", "vp", "cto", "ceo", "founder", "head", "lead"])):
+                    
                     ranked.append((score, {
-                        "full_name": p.get("full_name", ""),
-                        "title": p.get("title"),
-                        "url": p.get("url", "")
+                        "full_name": full_name,
+                        "title": p.get("title") or "Unknown Title",
+                        "url": p.get("url") or ""
                     }))
             
-            contacts = [p for _, p in sorted(ranked, reverse=True)]
+            # Sort by score and take top contacts
+            ranked_sorted = sorted(ranked, key=lambda x: x[0], reverse=True)[:10]  # Top 10 contacts
+            contacts = [p for _, p in ranked_sorted]
             has_ta_team = self._has_talent_acquisition_team(people)
-            logger.info(f"RapidAPI successfully found {len(contacts)} relevant contacts for {company}")
+            logger.info(f"SaleLeads API successfully found {len(contacts)} relevant contacts for {company}")
             return contacts, has_ta_team
             
         except Exception as e:
-            logger.error(f"RapidAPI error for {company}: {e}")
+            logger.error(f"SaleLeads API error for {company}: {e}")
             logger.info(f"Falling back to demo data for {company}")
             return self._get_demo_contacts(company, role_hint, keywords)
     

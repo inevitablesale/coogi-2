@@ -257,6 +257,9 @@ class JobScraper:
     
     def extract_keywords(self, text: str) -> List[str]:
         """Extract relevant keywords from job description"""
+        if not text:
+            return []
+            
         if self.ai_demo_mode or not self.openai_client:
             # Fallback keyword extraction when OpenAI not available
             return self._fallback_extract_keywords(text)
@@ -287,6 +290,9 @@ class JobScraper:
     
     def _fallback_extract_keywords(self, text: str) -> List[str]:
         """Fallback keyword extraction without AI"""
+        if not text:
+            return []
+            
         text_lower = text.lower()
         
         # Common tech and business keywords

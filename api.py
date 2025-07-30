@@ -119,10 +119,11 @@ async def search_jobs(request: JobSearchRequest):
                 continue
             
             # Find contacts
+            description = job.get('description') or job.get('job_level') or ''
             contacts, has_ta_team = contact_finder.find_contacts(
                 company=job.get('company', ''),
                 role_hint=job.get('title', ''),
-                keywords=job_scraper.extract_keywords(job.get('description', ''))
+                keywords=job_scraper.extract_keywords(description)
             )
             
             for contact in contacts[:2]:  # Top 2 contacts per job
