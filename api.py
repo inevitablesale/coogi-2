@@ -193,6 +193,7 @@ async def search_jobs(request: JobSearchRequest):
                     leads.append(lead)
             
             # Mark job as processed
+            job_fingerprint = memory_manager.create_job_fingerprint(job)
             memory_manager.mark_job_processed(job_fingerprint)
         
         return JobSearchResponse(
@@ -363,6 +364,73 @@ async def analyze_companies(request: CompanyAnalysisRequest):
         logger.error(f"Error in company analysis: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/search-jobs-fast")
+async def search_jobs_fast(request: JobSearchRequest):
+    """Fast job search with immediate results - optimized for 30-second responses"""
+    try:
+        # Parse query quickly
+        search_params = job_scraper.parse_query(request.query)
+        
+        # Get fewer jobs for faster processing
+        jobs = job_scraper.search_jobs(search_params, max_results=min(request.max_leads * 2, 10))
+        
+        if not jobs:
+            raise HTTPException(status_code=404, detail="No jobs found matching criteria")
+        
+        leads = []
+        for i, job in enumerate(jobs[:request.max_leads]):
+            company = job.get('company', '')
+            
+            # Skip processed jobs quickly
+            job_fingerprint = memory_manager.create_job_fingerprint(job)
+            if memory_manager.is_job_processed(job_fingerprint):
+                continue
+                
+            # Find contacts with timeout
+            contacts, has_ta_team = contact_finder.find_contacts(company, job.get('title', ''), [])
+            
+            # Skip companies with TA teams immediately
+            if has_ta_team:
+                memory_manager.mark_job_processed(job_fingerprint)
+                continue
+                
+            # Process only the top contact for speed
+            if contacts:
+                contact = contacts[0]
+                email = contact_finder.find_email(contact['full_name'], company)
+                
+                if email:
+                    score = contact_finder.calculate_lead_score(contact, job, has_ta_team)
+                    
+                    lead = {
+                        "name": contact['full_name'],
+                        "title": contact['title'],
+                        "company": company,
+                        "email": email,
+                        "job_title": job.get('title', ''),
+                        "job_url": job.get('job_url', ''),
+                        "message": "",
+                        "score": score,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    leads.append(lead)
+            
+            memory_manager.mark_job_processed(job_fingerprint)
+            
+        return {
+            "leads": leads,
+            "summary": {
+                "leads_found": len(leads),
+                "jobs_processed": len(jobs[:request.max_leads]),
+                "total_jobs": len(jobs)
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in fast job search: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/search-jobs-stream")
 async def search_jobs_stream(request: JobSearchRequest):
     """Stream job search results for immediate feedback"""
@@ -393,7 +461,7 @@ async def search_jobs_stream(request: JobSearchRequest):
                 yield f"data: {json.dumps({'type': 'processing', 'message': company_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
                 
                 # Check if already processed
-                job_fingerprint = memory_manager.generate_job_fingerprint(job)
+                job_fingerprint = memory_manager.create_job_fingerprint(job)
                 if memory_manager.is_job_processed(job_fingerprint):
                     skip_msg = f'Already processed: {company}'
                     yield f"data: {json.dumps({'type': 'skipped', 'message': skip_msg, 'timestamp': datetime.now().isoformat()})}\n\n"

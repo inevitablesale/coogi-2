@@ -32,7 +32,9 @@ def search_jobs(query, max_leads=10, hours_old=24, enforce_salary=True, auto_gen
             "enforce_salary": enforce_salary,
             "auto_generate_messages": auto_generate_messages
         }
-        response = requests.post(f"{API_BASE_URL}/search-jobs", json=payload, timeout=30)
+        
+        # Use fast endpoint for better performance within timeout limits
+        response = requests.post(f"{API_BASE_URL}/search-jobs-fast", json=payload, timeout=30)
         return response.status_code == 200, response.json() if response.status_code == 200 else None
     except requests.exceptions.RequestException as e:
         return False, str(e)
@@ -60,7 +62,7 @@ def analyze_companies(query, max_companies=10, include_job_data=True):
             "max_companies": max_companies,
             "include_job_data": include_job_data
         }
-        response = requests.post(f"{API_BASE_URL}/analyze-companies", json=payload, timeout=60)
+        response = requests.post(f"{API_BASE_URL}/analyze-companies", json=payload, timeout=120)
         return response.status_code == 200, response.json() if response.status_code == 200 else None
     except requests.exceptions.RequestException as e:
         return False, str(e)
