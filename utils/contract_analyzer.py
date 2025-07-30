@@ -69,8 +69,9 @@ class ContractAnalyzer:
         # Limit results
         top_opportunities = contract_opportunities[:max_companies]
         
-        # Generate summary
-        total_budget = sum(opp['estimated_budget'] for opp in top_opportunities)
+        # Generate summary  
+        total_recruiting_fees = sum(opp['estimated_recruiting_fees'] for opp in top_opportunities)
+        total_candidate_salaries = sum(opp['total_candidate_salaries'] for opp in top_opportunities)
         avg_positions = sum(opp['total_positions'] for opp in top_opportunities) / max(len(top_opportunities), 1)
         
         return {
@@ -78,7 +79,8 @@ class ContractAnalyzer:
             'summary': {
                 'total_companies_analyzed': len(company_data),
                 'high_value_opportunities': len(top_opportunities),
-                'total_estimated_budget': total_budget,
+                'total_recruiting_fees': total_recruiting_fees,
+                'total_candidate_salaries': total_candidate_salaries,
                 'average_positions_per_company': round(avg_positions, 1),
                 'top_opportunity': top_opportunities[0] if top_opportunities else None
             },
@@ -93,7 +95,8 @@ class ContractAnalyzer:
         
         # Basic metrics
         total_positions = len(jobs)
-        estimated_budget = 0
+        total_candidate_salaries = 0
+        estimated_recruiting_fees = 0
         urgency_score = 0
         growth_score = 0
         seniority_score = 0
@@ -114,7 +117,11 @@ class ContractAnalyzer:
             else:
                 estimated_salary = salary_max or salary_min or 0
             
-            estimated_budget += estimated_salary
+            total_candidate_salaries += estimated_salary
+            
+            # Calculate recruiting fee (20% average for contingency recruiting)
+            recruiting_fee = estimated_salary * 0.20
+            estimated_recruiting_fees += recruiting_fee
             
             # Analyze job content for signals
             job_text = f"{job.get('title', '')} {job.get('description', '')}".lower()
@@ -145,22 +152,23 @@ class ContractAnalyzer:
             if role_type:
                 role_types.add(role_type)
         
-        # Calculate contract value score
+        # Calculate contract value score  
         contract_value_score = self._calculate_contract_score(
-            total_positions, estimated_budget, urgency_score, 
+            total_positions, estimated_recruiting_fees, urgency_score, 
             growth_score, seniority_score, len(departments)
         )
         
         # Generate recruiting pitch
         pitch = self._generate_recruiting_pitch(
-            company, total_positions, estimated_budget, 
+            company, total_positions, estimated_recruiting_fees, 
             list(role_types), urgency_score > 0, growth_score > 0
         )
         
         return {
             'company': company,
             'total_positions': total_positions,
-            'estimated_budget': estimated_budget,
+            'total_candidate_salaries': total_candidate_salaries,
+            'estimated_recruiting_fees': estimated_recruiting_fees,
             'contract_value_score': round(contract_value_score, 1),
             'urgency_indicators': urgency_score,
             'growth_indicators': growth_score,
@@ -174,6 +182,8 @@ class ContractAnalyzer:
                     'title': job.get('title'),
                     'location': job.get('location'),
                     'salary_range': f"{job.get('salary_min', 'N/A')} - {job.get('salary_max', 'N/A')}",
+                    'estimated_salary': self._extract_salary(job.get('salary_max')) or self._extract_salary(job.get('salary_min')) or self._estimate_salary_from_title(job.get('title', '')),
+                    'recruiting_fee': (self._extract_salary(job.get('salary_max')) or self._extract_salary(job.get('salary_min')) or self._estimate_salary_from_title(job.get('title', ''))) * 0.20,
                     'job_url': job.get('job_url')
                 }
                 for job in jobs
@@ -292,7 +302,7 @@ class ContractAnalyzer:
         
         return score
 
-    def _generate_recruiting_pitch(self, company: str, positions: int, budget: int,
+    def _generate_recruiting_pitch(self, company: str, positions: int, recruiting_fees: int,
                                  role_types: List[str], has_urgency: bool, has_growth: bool) -> str:
         """Generate a personalized recruiting pitch"""
         
@@ -304,9 +314,9 @@ class ContractAnalyzer:
         else:
             pitch_parts.append(f"I see {company} is hiring for {positions} key role{'s' if positions > 1 else ''}")
         
-        # Budget context
-        if budget > 500000:
-            pitch_parts.append(f"with a substantial hiring budget (${budget:,}+ estimated)")
+        # Fee context  
+        if recruiting_fees > 50000:
+            pitch_parts.append(f"representing ${recruiting_fees:,}+ in potential recruiting fees")
         
         # Role context
         if role_types:

@@ -113,7 +113,8 @@ class ContractOpportunityRequest(BaseModel):
 class ContractOpportunity(BaseModel):
     company: str
     total_positions: int
-    estimated_budget: int
+    total_candidate_salaries: int
+    estimated_recruiting_fees: int
     contract_value_score: float
     urgency_indicators: int
     growth_indicators: int
