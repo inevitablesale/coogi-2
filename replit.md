@@ -113,5 +113,7 @@ The application follows a modular architecture with clear separation of concerns
 - **Timeout Management**: Optimized processing pipeline to respect client timeout constraints
 - **Data Integrity Enforcement**: Removed all demo/mock data generation, system only returns authentic results
 - **Clear API Requirements**: Added proper feedback when Hunter.io API key is required for email discovery
+- **MAJOR FIX - Enterprise Filtering**: Added comprehensive enterprise company filtering to prevent targeting Google, Microsoft, Amazon, and other major corporations that always have TA teams
+- **Startup Targeting Optimization**: Enhanced job search to properly filter out enterprise companies before expensive API calls, significantly improving targeting accuracy for volume recruiting
 
 The architecture prioritizes modularity and maintainability while providing a clear upgrade path from demo to production deployment. The system is designed to handle the complete recruiting workflow from job discovery through successful candidate placement.

@@ -378,19 +378,34 @@ async def search_jobs_fast(request: JobSearchRequest):
             raise HTTPException(status_code=404, detail="No jobs found matching criteria")
         
         leads = []
-        for i, job in enumerate(jobs[:request.max_leads]):
+        processed_count = 0
+        for i, job in enumerate(jobs):
+            if processed_count >= request.max_leads:
+                break
+                
             company = job.get('company', '')
+            
+            # Pre-filter enterprise companies to avoid wasting API calls
+            enterprise_companies = ["google", "microsoft", "amazon", "apple", "meta", "facebook", "netflix", "tesla", "lockheed martin", "general dynamics", "boeing", "ibm", "oracle", "salesforce", "adobe", "intel", "nvidia", "uber", "airbnb", "twitter", "linkedin", "paypal", "jpmorgan", "goldman sachs", "morgan stanley"]
+            
+            if any(enterprise in company.lower() for enterprise in enterprise_companies):
+                logger.warning(f"⚠️  SKIP: {company} is enterprise company - guaranteed TA team")
+                continue
             
             # Skip processed jobs quickly
             job_fingerprint = memory_manager.create_job_fingerprint(job)
             if memory_manager.is_job_processed(job_fingerprint):
                 continue
                 
+            processed_count += 1
+            logger.info(f"Processing job {processed_count}: {job.get('title')} at {company}")
+                
             # Find contacts with timeout
             contacts, has_ta_team = contact_finder.find_contacts(company, job.get('title', ''), [])
             
             # Skip companies with TA teams immediately
             if has_ta_team:
+                logger.warning(f"⚠️  SKIP: {company} has internal TA team - low conversion probability")
                 memory_manager.mark_job_processed(job_fingerprint)
                 continue
                 

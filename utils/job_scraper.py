@@ -124,6 +124,11 @@ class JobScraper:
             if not location:
                 location = "United States"
             
+            # Add company size filter for startup targeting
+            company_size_filter = ""
+            if "startup" in search_term.lower() or "startup" in search_params.get("keywords", []):
+                company_size_filter = "startup"
+            
             api_params = {
                 "query": search_term,
                 "location": location,
@@ -132,6 +137,10 @@ class JobScraper:
                 "results_wanted": min(max_results, search_params.get("results_wanted", 100)),
                 "hours_old": search_params.get("hours_old", 72)  # Broader time range
             }
+            
+            # Add company size if specified
+            if company_size_filter:
+                api_params["company_size"] = company_size_filter
             
             logger.info(f"Calling JobSpy API with params: {api_params}")
             response = requests.get(self.jobspy_api_url, params=api_params, timeout=30)

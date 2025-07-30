@@ -163,7 +163,7 @@ class ContactFinder:
     
     def _has_talent_acquisition_team(self, people: List[dict]) -> bool:
         """Check if company has a talent acquisition team - critical for recruiter contract decisions"""
-        ta_keywords = ["talent", "recruiter", "recruiting", "people ops", "hr", "human resources", "people partner", "talent acquisition", "talent partner", "people operations"]
+        ta_keywords = ["talent", "recruiter", "recruiting", "people ops", "hr", "human resources", "people partner", "talent acquisition", "talent partner", "people operations", "hiring", "recruitment"]
         
         ta_roles_found = []
         for person in people:
@@ -172,10 +172,23 @@ class ContactFinder:
                 if keyword in title:
                     ta_roles_found.append(title)
         
+        # Additional check for large enterprise companies that always have TA teams
+        company_name = ""
+        if people:
+            # Extract company name from first person's data
+            company_name = people[0].get("company", "").lower()
+        
+        enterprise_companies = ["google", "microsoft", "amazon", "apple", "meta", "facebook", "netflix", "tesla", "lockheed martin", "general dynamics", "boeing", "ibm", "oracle", "salesforce", "adobe", "intel", "nvidia", "uber", "airbnb", "twitter", "linkedin", "paypal", "jpmorgan", "goldman sachs", "morgan stanley", "blackrock", "mckinsey", "deloitte", "accenture", "pwc", "kpmg", "ey"]
+        
+        for enterprise in enterprise_companies:
+            if enterprise in company_name:
+                logger.warning(f"🚫 ENTERPRISE COMPANY: {company_name.title()} - guaranteed TA team (major corporation)")
+                return True
+        
         # Log the talent acquisition roles found for recruiter decision-making
         if ta_roles_found:
             unique_roles = list(set(ta_roles_found))[:5]  # Remove duplicates, show top 5
-            logger.info(f"❌ SKIP: Internal TA team detected - {unique_roles}")
+            logger.warning(f"🚫 TA TEAM DETECTED: {unique_roles}")
             return True
         else:
             logger.info(f"✅ TARGET: No TA team - direct hiring opportunity")
