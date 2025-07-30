@@ -397,7 +397,7 @@ def main():
             )
         
         with col2:
-            max_contract_companies = st.number_input("Max Companies", min_value=1, max_value=20, value=5)
+            max_contract_companies = st.number_input("Max Companies", min_value=1, max_value=20, value=5, key="contract_max_companies")
         
         if st.button("💰 Analyze Contract Opportunities", type="primary", use_container_width=True):
             if not contract_query.strip():
@@ -493,7 +493,7 @@ def main():
         with col1:
             company_name = st.text_input("Company Name", placeholder="e.g., Shopify, Stripe, OpenAI")
         with col2:
-            max_pages = st.number_input("Max Pages", min_value=1, max_value=10, value=3)
+            max_pages = st.number_input("Max Pages", min_value=1, max_value=10, value=3, key="company_max_pages")
         
         if st.button("🔍 Get All Company Jobs"):
             if not company_name.strip():
