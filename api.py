@@ -10,6 +10,7 @@ from utils.job_scraper import JobScraper
 from utils.contact_finder import ContactFinder
 from utils.email_generator import EmailGenerator
 from utils.memory_manager import MemoryManager
+import requests  # Add missing import for company analysis API calls
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +27,7 @@ job_scraper = JobScraper()
 contact_finder = ContactFinder()
 email_generator = EmailGenerator()
 memory_manager = MemoryManager()
+# company_analyzer = CompanyAnalyzer(rapidapi_key=os.getenv("RAPIDAPI_KEY", ""))  # Will be initialized after import
 
 # Request/Response Models
 class JobSearchRequest(BaseModel):
@@ -64,6 +66,33 @@ class MessageGenerationRequest(BaseModel):
 class MessageGenerationResponse(BaseModel):
     message: str
     subject_line: str
+    timestamp: str
+
+class CompanyAnalysisRequest(BaseModel):
+    query: str
+    include_job_data: bool = True
+    max_companies: int = 10
+
+class CompanySkipReason(BaseModel):
+    company: str
+    reason: str
+    ta_roles: List[str]
+    timestamp: str
+
+class CompanyReport(BaseModel):
+    company: str
+    has_ta_team: bool
+    ta_roles: List[str]
+    job_count: int
+    active_jobs: List[Dict[str, Any]]
+    decision_makers: List[Dict[str, Any]]
+    recommendation: str
+    skip_reason: Optional[str]
+
+class CompanyAnalysisResponse(BaseModel):
+    target_companies: List[CompanyReport]
+    skipped_companies: List[CompanySkipReason]
+    summary: Dict[str, Any]
     timestamp: str
 
 class HealthResponse(BaseModel):
@@ -213,6 +242,111 @@ async def clear_memory():
     """Clear all memory data"""
     memory_manager.clear_memory()
     return {"message": "Memory cleared successfully", "timestamp": datetime.now().isoformat()}
+
+@app.post("/analyze-companies", response_model=CompanyAnalysisResponse)
+async def analyze_companies(request: CompanyAnalysisRequest):
+    """Comprehensive company analysis with skip reporting and job data"""
+    try:
+        # Import here to avoid circular dependency
+        from utils.company_analyzer import CompanyAnalyzer
+        analyzer = CompanyAnalyzer(rapidapi_key=os.getenv("RAPIDAPI_KEY", ""))
+        
+        # Clear previous analysis
+        analyzer.clear_skip_history()
+        
+        # Parse query and search for jobs
+        search_params = job_scraper.parse_query(request.query)
+        jobs = job_scraper.search_jobs(search_params, max_results=request.max_companies * 3)
+        
+        if not jobs:
+            raise HTTPException(status_code=404, detail="No jobs found matching criteria")
+        
+        target_companies = []
+        processed_companies = set()
+        
+        # Analyze unique companies
+        for job in jobs:
+            company = job.get('company', '')
+            if not company or company in processed_companies:
+                continue
+            
+            processed_companies.add(company)
+            if len(processed_companies) > request.max_companies:
+                break
+            
+            # Get people data from SaleLeads API
+            try:
+                people_data = []
+                people_url = "https://fresh-linkedin-scraper-api.p.rapidapi.com/api/v1/company/people"
+                headers = {
+                    "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY", ""),
+                    "X-RapidAPI-Host": "fresh-linkedin-scraper-api.p.rapidapi.com"
+                }
+                
+                people_resp = requests.get(
+                    people_url, 
+                    params={"company": company, "page": 1}, 
+                    headers=headers, 
+                    timeout=15
+                )
+                
+                if people_resp.status_code == 200:
+                    people_response = people_resp.json()
+                    if people_response.get("success", False):
+                        people_data = people_response.get("data", [])
+                
+                # Analyze company
+                analysis = analyzer.analyze_company(company, people_data)
+                
+                # Only include companies without TA teams as targets
+                if not analysis.has_ta_team and analysis.decision_makers:
+                    target_companies.append(CompanyReport(
+                        company=analysis.company,
+                        has_ta_team=analysis.has_ta_team,
+                        ta_roles=analysis.ta_roles,
+                        job_count=analysis.job_count,
+                        active_jobs=analysis.active_jobs,
+                        decision_makers=analysis.decision_makers,
+                        recommendation=analysis.recommendation,
+                        skip_reason=analysis.skip_reason
+                    ))
+                    
+            except Exception as e:
+                logger.error(f"Error analyzing company {company}: {e}")
+                continue
+        
+        # Get skip report
+        skip_report = analyzer.get_skip_report()
+        skipped_companies = [
+            CompanySkipReason(
+                company=skip['company'],
+                reason=skip['reason'],
+                ta_roles=skip['ta_roles'],
+                timestamp=skip['timestamp']
+            )
+            for skip in skip_report['skipped_companies']
+        ]
+        
+        # Generate summary
+        total_analyzed = len(processed_companies)
+        summary = {
+            "total_companies_analyzed": total_analyzed,
+            "target_companies_found": len(target_companies),
+            "companies_skipped": skip_report['total_skipped'],
+            "skip_reasons": skip_report['skip_reasons'],
+            "success_rate": round(len(target_companies) / max(total_analyzed, 1) * 100, 1)
+        }
+        
+        return CompanyAnalysisResponse(
+            target_companies=target_companies,
+            skipped_companies=skipped_companies,
+            summary=summary,
+            timestamp=datetime.now().isoformat()
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in company analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

@@ -52,6 +52,19 @@ def generate_message(job_title, company, contact_title, job_url, tone="professio
     except requests.exceptions.RequestException as e:
         return False, str(e)
 
+def analyze_companies(query, max_companies=10, include_job_data=True):
+    """Analyze companies for recruiting opportunities"""
+    try:
+        payload = {
+            "query": query,
+            "max_companies": max_companies,
+            "include_job_data": include_job_data
+        }
+        response = requests.post(f"{API_BASE_URL}/analyze-companies", json=payload, timeout=60)
+        return response.status_code == 200, response.json() if response.status_code == 200 else None
+    except requests.exceptions.RequestException as e:
+        return False, str(e)
+
 def get_memory_stats():
     """Get memory statistics from the API"""
     try:
@@ -97,7 +110,7 @@ def main():
             st.metric("Messages Generated", stats_data.get("conversions_count", 0))
     
     # Main interface
-    tab1, tab2, tab3 = st.tabs(["🔍 Job Search", "✉️ Message Generator", "📈 Analytics"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🔍 Job Search", "🏢 Company Analysis", "✉️ Message Generator", "📈 Analytics"])
     
     with tab1:
         st.header("Job Search & Lead Generation")
@@ -204,7 +217,138 @@ def main():
                 else:
                     st.error(f"Message generation failed: {result}")
     
+    with tab2:
+        st.header("🏢 Company Analysis & Skip Report")
+        st.write("Analyze companies to identify those without internal TA teams for high-conversion recruiting")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            analysis_query = st.text_input(
+                "Job Search Query", 
+                placeholder="e.g., software engineer, data scientist, marketing manager",
+                help="Enter job titles to find companies hiring for these roles"
+            )
+        
+        with col2:
+            max_companies = st.number_input("Max Companies", min_value=1, max_value=20, value=5)
+        
+        col3, col4 = st.columns(2)
+        with col3:
+            include_job_data = st.checkbox("Include Job Data", value=True, help="Fetch current job postings for companies")
+        
+        if st.button("🔍 Analyze Companies", type="primary", use_container_width=True):
+            if not analysis_query.strip():
+                st.error("Please enter a search query")
+            else:
+                with st.spinner("Analyzing companies for recruiting opportunities..."):
+                    success, result = analyze_companies(analysis_query, max_companies, include_job_data)
+                
+                if success and result and isinstance(result, dict):
+                    st.success("Company analysis completed!")
+                    
+                    # Summary metrics
+                    summary = result.get('summary', {})
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Companies Analyzed", summary.get('total_companies_analyzed', 0))
+                    with col2:
+                        st.metric("Target Companies", summary.get('target_companies_found', 0))
+                    with col3:
+                        st.metric("Companies Skipped", summary.get('companies_skipped', 0))
+                    with col4:
+                        st.metric("Success Rate", f"{summary.get('success_rate', 0)}%")
+                    
+                    # Target companies
+                    target_companies = result.get('target_companies', [])
+                    if target_companies:
+                        st.subheader("🎯 Target Companies (No TA Team)")
+                        for i, company in enumerate(target_companies):
+                            with st.expander(f"🏢 {company.get('company', '')} - {company.get('recommendation', '')}"):
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.write("**Decision Makers:**")
+                                    decision_makers = company.get('decision_makers', [])
+                                    for dm in decision_makers:
+                                        score = dm.get('decision_score', 0)
+                                        title = dm.get('title', '')
+                                        score_icon = "⭐" * (score // 2)
+                                        st.write(f"{score_icon} {title} (Score: {score})")
+                                
+                                with col2:
+                                    if company.get('job_count', 0) > 0:
+                                        st.write(f"**Active Jobs:** {company.get('job_count', 0)}")
+                                        active_jobs = company.get('active_jobs', [])[:3]
+                                        for job in active_jobs:
+                                            st.write(f"• {job.get('title', 'Job Title')}")
+                                    else:
+                                        st.write("**Active Jobs:** None found")
+                    else:
+                        st.info("No target companies found. All companies have internal TA teams or no decision makers.")
+                    
+                    # Skip report
+                    st.subheader("📊 Company Skip Report")
+                    skipped_companies = result.get('skipped_companies', [])
+                    skip_reasons = summary.get('skip_reasons', {})
+                    
+                    if skip_reasons:
+                        # Skip reasons chart
+                        for reason, count in skip_reasons.items():
+                            st.write(f"**{reason}:** {count} companies")
+                    
+                    # Recent skipped companies
+                    if skipped_companies:
+                        st.write("**Recently Skipped Companies:**")
+                        for skip in skipped_companies[-5:]:  # Show last 5
+                            company = skip.get('company', '')
+                            reason = skip.get('reason', '')
+                            ta_roles = skip.get('ta_roles', [])
+                            
+                            if ta_roles:
+                                st.write(f"• **{company}**: {reason} ({', '.join(ta_roles[:2])})")
+                            else:
+                                st.write(f"• **{company}**: {reason}")
+                
+                elif success:
+                    st.warning("Analysis completed but no results found")
+                else:
+                    st.error(f"Analysis failed: {result}")
+    
     with tab3:
+        st.header("Message Generator")
+        st.write("Generate personalized outreach messages for specific contacts")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            job_title = st.text_input("Job Title", placeholder="Senior Software Engineer")
+            company = st.text_input("Company", placeholder="TechCorp Inc")
+        
+        with col2:
+            contact_title = st.text_input("Contact Title", placeholder="VP of Engineering")
+            job_url = st.text_input("Job URL", placeholder="https://company.com/jobs/123")
+        
+        tone = st.selectbox("Message Tone", ["professional", "friendly", "direct"], index=0)
+        
+        if st.button("✨ Generate Message", type="primary"):
+            if not all([job_title, company, contact_title]):
+                st.error("Please fill in job title, company, and contact title")
+            else:
+                with st.spinner("Generating personalized message..."):
+                    success, result = generate_message(job_title, company, contact_title, job_url, tone)
+                
+                if success and result and isinstance(result, dict):
+                    st.success("Message generated successfully!")
+                    st.write("**Subject:**")
+                    st.code(result.get('subject_line', 'No subject'))
+                    st.write("**Message:**")
+                    st.text_area("Generated Message", result.get('message', 'No message'), height=300)
+                else:
+                    st.error(f"Message generation failed: {result}")
+    
+    with tab4:
         st.header("Platform Analytics")
         
         stats_success, stats_data = get_memory_stats()
