@@ -100,5 +100,10 @@ The application follows a modular architecture with clear separation of concerns
 - **Streamlit Web Interface**: Added user-friendly web UI on port 8501 for job search and message generation
 - **GitHub Preparation**: Added comprehensive README.md, .gitignore, and documentation
 - **Environment Setup**: Created .env.example for easy configuration management
+- **Company Analysis System**: Added comprehensive company analyzer with TA team detection and job data integration
+- **Skip Reporting**: Implemented detailed tracking of why companies are excluded from recruiting targets
+- **Rate Limiting**: Added proper RapidAPI rate limiting (2+ second delays, adaptive timing, 429 error handling)
+- **Decision Maker Scoring**: Implemented weighted scoring system (C-level=10, VP=8, Director=6, Manager=4)
+- **Volume Optimization**: Focus on companies without internal talent acquisition teams for higher conversion rates
 
 The architecture prioritizes modularity and maintainability while providing a clear upgrade path from demo to production deployment. The system is designed to handle the complete recruiting workflow from job discovery through successful candidate placement.

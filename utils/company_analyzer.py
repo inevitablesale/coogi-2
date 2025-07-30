@@ -1,5 +1,6 @@
 import logging
 import requests
+import time
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,6 +29,9 @@ class CompanyAnalyzer:
     def __init__(self, rapidapi_key: str):
         self.rapidapi_key = rapidapi_key
         self.skipped_companies = []
+        self.last_api_call = 0
+        self.min_delay = 2.0  # 2 seconds minimum between API calls
+        self.api_calls_made = 0
         
     def analyze_company(self, company: str, people_data: List[Dict[str, Any]]) -> CompanyAnalysis:
         """Comprehensive company analysis for recruiting opportunity assessment"""
@@ -90,16 +94,37 @@ class CompanyAnalyzer:
         unique_ta_roles = list(set(ta_roles_found))
         return len(unique_ta_roles) > 0, unique_ta_roles
     
+    def _rate_limit_api_call(self):
+        """Ensure we respect RapidAPI rate limits"""
+        current_time = time.time()
+        time_since_last_call = current_time - self.last_api_call
+        
+        if time_since_last_call < self.min_delay:
+            sleep_time = self.min_delay - time_since_last_call
+            logger.info(f"Rate limiting: sleeping for {sleep_time:.2f} seconds")
+            time.sleep(sleep_time)
+        
+        self.last_api_call = time.time()
+        self.api_calls_made += 1
+        
+        # Increase delay after multiple calls to avoid hitting limits
+        if self.api_calls_made % 10 == 0:
+            self.min_delay = min(self.min_delay + 0.5, 5.0)  # Max 5 seconds
+            logger.info(f"Increased API delay to {self.min_delay} seconds after {self.api_calls_made} calls")
+
     def _get_company_jobs(self, company: str) -> tuple[int, List[Dict[str, Any]]]:
-        """Get company jobs from SaleLeads API"""
+        """Get company jobs from SaleLeads API with rate limiting"""
         try:
+            # Rate limit the API call
+            self._rate_limit_api_call()
+            
             jobs_url = "https://fresh-linkedin-scraper-api.p.rapidapi.com/api/v1/company/jobs"
             headers = {
                 "X-RapidAPI-Key": self.rapidapi_key,
                 "X-RapidAPI-Host": "fresh-linkedin-scraper-api.p.rapidapi.com"
             }
             
-            logger.info(f"Getting job data for {company}")
+            logger.info(f"Getting job data for {company} (API call #{self.api_calls_made})")
             response = requests.get(
                 jobs_url, 
                 params={"company": company, "page": 1}, 

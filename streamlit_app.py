@@ -186,38 +186,6 @@ def main():
                     st.error(f"Search failed: {result}")
     
     with tab2:
-        st.header("Message Generator")
-        st.write("Generate personalized outreach messages for specific contacts")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            job_title = st.text_input("Job Title", placeholder="Senior Software Engineer")
-            company = st.text_input("Company", placeholder="TechCorp Inc")
-        
-        with col2:
-            contact_title = st.text_input("Contact Title", placeholder="VP of Engineering")
-            job_url = st.text_input("Job URL", placeholder="https://company.com/jobs/123")
-        
-        tone = st.selectbox("Message Tone", ["professional", "friendly", "direct"], index=0)
-        
-        if st.button("✨ Generate Message", type="primary"):
-            if not all([job_title, company, contact_title]):
-                st.error("Please fill in job title, company, and contact title")
-            else:
-                with st.spinner("Generating personalized message..."):
-                    success, result = generate_message(job_title, company, contact_title, job_url, tone)
-                
-                if success and result and isinstance(result, dict):
-                    st.success("Message generated successfully!")
-                    st.write("**Subject:**")
-                    st.code(result.get('subject', 'No subject'))
-                    st.write("**Message:**")
-                    st.text_area("Generated Message", result.get('message', 'No message'), height=300)
-                else:
-                    st.error(f"Message generation failed: {result}")
-    
-    with tab2:
         st.header("🏢 Company Analysis & Skip Report")
         st.write("Analyze companies to identify those without internal TA teams for high-conversion recruiting")
         

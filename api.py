@@ -11,6 +11,7 @@ from utils.contact_finder import ContactFinder
 from utils.email_generator import EmailGenerator
 from utils.memory_manager import MemoryManager
 import requests  # Add missing import for company analysis API calls
+import time  # Add time import for rate limiting
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -274,15 +275,21 @@ async def analyze_companies(request: CompanyAnalysisRequest):
             if len(processed_companies) > request.max_companies:
                 break
             
-            # Get people data from SaleLeads API
+            # Get people data from SaleLeads API with rate limiting
             try:
                 people_data = []
+                
+                # Add delay between API calls to respect rate limits
+                if processed_companies:  # Not the first company
+                    time.sleep(2)  # 2 second delay between companies
+                
                 people_url = "https://fresh-linkedin-scraper-api.p.rapidapi.com/api/v1/company/people"
                 headers = {
                     "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY", ""),
                     "X-RapidAPI-Host": "fresh-linkedin-scraper-api.p.rapidapi.com"
                 }
                 
+                logger.info(f"Fetching people data for {company} (with rate limiting)")
                 people_resp = requests.get(
                     people_url, 
                     params={"company": company, "page": 1}, 
@@ -294,6 +301,12 @@ async def analyze_companies(request: CompanyAnalysisRequest):
                     people_response = people_resp.json()
                     if people_response.get("success", False):
                         people_data = people_response.get("data", [])
+                        logger.info(f"Found {len(people_data)} people at {company}")
+                elif people_resp.status_code == 429:
+                    logger.warning(f"Rate limit hit for {company}, skipping detailed analysis")
+                    # Still proceed with basic analysis without people data
+                else:
+                    logger.warning(f"People API failed for {company}: {people_resp.status_code}")
                 
                 # Analyze company
                 analysis = analyzer.analyze_company(company, people_data)
