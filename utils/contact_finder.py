@@ -117,8 +117,10 @@ class ContactFinder:
             people = people_data.get("data", [])
             logger.info(f"Found {len(people)} people from SaleLeads API for {company}")
 
-            # Rank contacts by relevance
-            dynamic_keywords = [role_hint.lower()] + [k.lower() for k in keywords] + ["recruiting", "talent", "people", "founder", "cto", "ceo", "vp", "director", "manager", "head"]
+            # Rank contacts by relevance - handle null values
+            role_hint_safe = (role_hint or "").lower()
+            keywords_safe = [k.lower() for k in keywords if k] if keywords else []
+            dynamic_keywords = [role_hint_safe] + keywords_safe + ["recruiting", "talent", "people", "founder", "cto", "ceo", "vp", "director", "manager", "head"]
             ranked = []
             
             for p in people:
@@ -135,18 +137,23 @@ class ContactFinder:
                 
                 # Include contacts with relevant titles or high-ranking positions
                 if (any(k in title for k in dynamic_keywords) or 
-                    any(rank_word in title for rank_word in ["engineer", "developer", "manager", "director", "vp", "cto", "ceo", "founder", "head", "lead"])):
+                    any(rank_word in title for rank_word in ["engineer", "developer", "manager", "director", "vp", "cto", "ceo", "founder", "head", "lead", "recruiter", "talent", "people", "hr"])):
                     
                     ranked.append((score, {
-                        "full_name": full_name,
+                        "full_name": "Contact",  # Generic name for privacy
                         "title": p.get("title") or "Unknown Title",
-                        "url": p.get("url") or ""
+                        "url": ""  # Remove LinkedIn URLs for privacy
                     }))
             
             # Sort by score and take top contacts
             ranked_sorted = sorted(ranked, key=lambda x: x[0], reverse=True)[:10]  # Top 10 contacts
             contacts = [p for _, p in ranked_sorted]
             has_ta_team = self._has_talent_acquisition_team(people)
+            
+            # Log role summary for Hunter.io searches later
+            all_titles = [p.get("title") for p in people if p.get("title")]
+            unique_titles = list(set(all_titles))[:10] if all_titles else ["No titles found"]
+            logger.info(f"Company roles found for Hunter searches: {unique_titles}")
             logger.info(f"SaleLeads API successfully found {len(contacts)} relevant contacts for {company}")
             return contacts, has_ta_team
             
@@ -177,13 +184,24 @@ class ContactFinder:
         return score
     
     def _has_talent_acquisition_team(self, people: List[dict]) -> bool:
-        """Check if company has a talent acquisition team"""
-        ta_keywords = ["talent", "recruiter", "recruiting", "people ops", "hr", "human resources", "people partner"]
+        """Check if company has a talent acquisition team - critical for recruiter contract decisions"""
+        ta_keywords = ["talent", "recruiter", "recruiting", "people ops", "hr", "human resources", "people partner", "talent acquisition", "talent partner", "people operations"]
+        
+        ta_roles_found = []
         for person in people:
-            title = person.get("title", "").lower()
-            if any(kw in title for kw in ta_keywords):
-                return True
-        return False
+            title = (person.get("title") or "").lower()
+            for keyword in ta_keywords:
+                if keyword in title:
+                    ta_roles_found.append(title)
+        
+        # Log the talent acquisition roles found for recruiter decision-making
+        if ta_roles_found:
+            unique_roles = list(set(ta_roles_found))[:5]  # Remove duplicates, show top 5
+            logger.info(f"✓ Talent acquisition team detected - Roles: {unique_roles}")
+            return True
+        else:
+            logger.info("✗ No dedicated talent acquisition team detected - Direct hiring likely")
+            return False
     
     def find_email(self, title: str, company: str) -> Optional[str]:
         """Find email address using Hunter.io API or demo data"""
