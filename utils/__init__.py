@@ -1,1 +1,1 @@
-# Utils package for MCP recruiting platform
+# Utils package for MindGlimpse API 

@@ -10,12 +10,17 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+# Configure logging first
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Import utility modules
 from utils.job_scraper import JobScraper
 from utils.contact_finder import ContactFinder
 from utils.email_generator import EmailGenerator
 from utils.memory_manager import MemoryManager
 from utils.contract_analyzer import ContractAnalyzer
+from utils.instantly_manager import InstantlyManager
 import requests  # Add missing import for company analysis API calls
 import time  # Add time import for rate limiting
 import json
@@ -38,10 +43,6 @@ try:
 except ImportError:
     supabase = None
     logger.warning("⚠️  Supabase library not installed - database operations disabled")
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Rate Limiter for RapidAPI (20 requests per minute)
 class RateLimiter:
@@ -85,12 +86,13 @@ contact_finder = ContactFinder()
 email_generator = EmailGenerator()
 memory_manager = MemoryManager()
 contract_analyzer = ContractAnalyzer()
+instantly_manager = InstantlyManager()
 # company_analyzer = CompanyAnalyzer(rapidapi_key=os.getenv("RAPIDAPI_KEY", ""))  # Will be initialized after import
 
 # Request/Response Models
 class JobSearchRequest(BaseModel):
     query: str
-    hours_old: int = 24
+    hours_old: int = 720  # Default to 1 month for broader results
     enforce_salary: bool = True
     auto_generate_messages: bool = False
 
@@ -110,6 +112,13 @@ class JobSearchResponse(BaseModel):
     jobs_found: int
     total_processed: int
     search_query: str
+    timestamp: str
+
+class RawJobSpyResponse(BaseModel):
+    jobs: List[Dict[str, Any]]
+    total_jobs: int
+    search_query: str
+    location: str
     timestamp: str
 
 class MessageGenerationRequest(BaseModel):
@@ -182,6 +191,20 @@ class ContractAnalysisResponse(BaseModel):
     summary: Dict[str, Any]
     timestamp: str
 
+class InstantlyCampaignRequest(BaseModel):
+    query: str
+    campaign_name: Optional[str] = None
+    max_leads: int = 20
+    min_score: float = 0.5
+
+class InstantlyCampaignResponse(BaseModel):
+    campaign_id: Optional[str]
+    campaign_name: str
+    leads_added: int
+    total_leads_found: int
+    status: str
+    timestamp: str
+
 class CompanyJobsRequest(BaseModel):
     company_name: str
     max_pages: int = 3
@@ -248,6 +271,7 @@ async def search_jobs(request: JobSearchRequest):
         
         companies_analyzed = []
         processed_count = 0
+        processed_companies = set()  # Track companies we've already analyzed
         
         # Rate limiting: Process jobs in batches to respect 20 req/min limit
         # Each job requires ~3-4 RapidAPI calls, so process max 5 jobs per batch
@@ -274,30 +298,91 @@ async def search_jobs(request: JobSearchRequest):
                 
                 company = job.get('company', '')
                 
-                # Find contacts and analyze company
-                description = job.get('description') or job.get('job_level') or ''
-                contacts, has_ta_team = contact_finder.find_contacts(
-                    company=company,
-                    role_hint=job.get('title', ''),
-                    keywords=job_scraper.extract_keywords(description)
-                )
+                # Skip if we've already analyzed this company
+                if company in processed_companies:
+                    logger.info(f"Skipping {company} - already analyzed")
+                    memory_manager.mark_job_processed(job_fingerprint)
+                    continue
                 
-                # Analyze company for recruiting opportunity
-                company_analysis = {
-                    "company": company,
-                    "job_title": job.get('title', ''),
-                    "job_url": job.get('job_url', ''),
-                    "has_ta_team": has_ta_team,
-                    "contacts_found": len(contacts),
-                    "top_contacts": contacts[:3] if contacts else [],
-                    "recommendation": "TARGET" if not has_ta_team else "SKIP - Has TA team",
-                    "timestamp": datetime.now().isoformat()
-                }
+                processed_companies.add(company)
                 
-                companies_analyzed.append(company_analysis)
-                
-                # Mark job as processed
-                memory_manager.mark_job_processed(job_fingerprint)
+                # Find contacts and analyze company with better error handling
+                try:
+                    description = job.get('description') or job.get('job_level') or ''
+                    result = contact_finder.find_contacts(
+                        company=company,
+                        role_hint=job.get('title', ''),
+                        keywords=job_scraper.extract_keywords(description),
+                        company_website=job.get('company_website')  # Pass website from JobSpy
+                    )
+                    
+                    # Handle the return format (contacts, has_ta_team, employee_roles, company_found)
+                    contacts, has_ta_team, employee_roles, company_found = result
+                    
+                    # Get company website from job data (JobSpy domain finding)
+                    company_website = job.get('company_website')
+                    
+                    # Hunter.io email discovery for target companies only
+                    hunter_emails = []
+                    if not has_ta_team and company_found and company_website:  # Only if no TA team AND company found AND domain found
+                        try:
+                            hunter_emails = contact_finder.find_hunter_emails_for_target_company(
+                                company=company,
+                                job_title=job.get('title', ''),
+                                employee_roles=employee_roles,
+                                company_website=company_website
+                            )
+                            # Log success only if emails were actually found
+                            if hunter_emails:
+                                logger.info(f"✅ Found {len(hunter_emails)} Hunter.io emails for {company}")
+                            else:
+                                logger.warning(f"⚠️  No Hunter.io emails found for {company}")
+                        except Exception as e:
+                            logger.error(f"Hunter.io error for {company}: {e}")
+                    elif has_ta_team:
+                        logger.info(f"⏭️  Skipping Hunter.io for {company} - has TA team")
+                    elif not company_found:
+                        logger.info(f"⏭️  Skipping Hunter.io for {company} - company not found")
+                    elif not company_website:
+                        logger.info(f"⏭️  Skipping Hunter.io for {company} - no domain found")
+                    
+                    # Analyze company for recruiting opportunity
+                    company_analysis = {
+                        "company": company,
+                        "job_title": job.get('title', ''),
+                        "job_url": job.get('job_url', ''),
+                        "has_ta_team": has_ta_team,
+                        "contacts_found": len(contacts),
+                        "top_contacts": contacts[:3] if contacts else [],
+                        "hunter_emails": hunter_emails,
+                        "employee_roles": employee_roles,
+                        "company_website": company_website,
+                        "company_found": company_found,
+                        "recommendation": "TARGET" if not has_ta_team else "SKIP - Has TA team",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                    companies_analyzed.append(company_analysis)
+                    
+                    # Mark job as processed
+                    memory_manager.mark_job_processed(job_fingerprint)
+                    
+                except Exception as e:
+                    logger.error(f"Error processing job {processed_count} for {company}: {e}")
+                    # Add failed job to results with error info
+                    company_analysis = {
+                        "company": company,
+                        "job_title": job.get('title', ''),
+                        "job_url": job.get('job_url', ''),
+                        "has_ta_team": False,
+                        "contacts_found": 0,
+                        "top_contacts": [],
+                        "hunter_emails": [],
+                        "employee_roles": [],
+                        "recommendation": f"ERROR - {str(e)[:50]}",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    companies_analyzed.append(company_analysis)
             
             # Wait between batches to respect rate limits
             if batch_end < total_jobs:
@@ -347,7 +432,8 @@ async def generate_message(request: MessageGenerationRequest):
 @app.get("/memory-stats")
 async def get_memory_stats():
     """Get memory/tracking statistics"""
-    return memory_manager.get_memory_stats()
+    stats = memory_manager.get_memory_stats()
+    return {"stats": stats, "timestamp": datetime.now().isoformat()}
 
 @app.delete("/memory")
 async def clear_memory():
@@ -472,6 +558,38 @@ async def analyze_companies(request: CompanyAnalysisRequest):
         logger.error(f"Error in company analysis: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/raw-jobspy", response_model=RawJobSpyResponse)
+async def get_raw_jobspy_results(request: JobSearchRequest):
+    """Get raw JobSpy results without any processing - fastest response"""
+    try:
+        # Parse query quickly
+        search_params = job_scraper.parse_query(request.query)
+        
+        # Get all available jobs - increased to allow more jobs from location variants
+        jobs = job_scraper.search_jobs(search_params, max_results=500)
+        
+        if not jobs:
+            raise HTTPException(status_code=404, detail="No jobs found matching criteria")
+        
+        logger.info(f"✅ Raw JobSpy results: {len(jobs)} jobs found")
+        
+        logger.info(f"🔍 DEBUG: Raw JobSpy search_params: {search_params}")
+        logger.info(f"📍 Location from search_params: {search_params.get('location', 'N/A')}")
+        logger.info(f"🔍 Search term from search_params: {search_params.get('search_term', 'N/A')}")
+        logger.info(f"🏠 Is remote from search_params: {search_params.get('is_remote', 'N/A')}")
+        
+        return RawJobSpyResponse(
+            jobs=jobs,
+            total_jobs=len(jobs),
+            search_query=request.query,
+            location=search_params.get("location", "N/A"),
+            timestamp=datetime.now().isoformat()
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in raw JobSpy search: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/search-jobs-fast", response_model=JobSearchResponse)
 async def search_jobs_fast(request: JobSearchRequest):
     """Fast job search with immediate results - optimized for 30-second responses"""
@@ -488,67 +606,28 @@ async def search_jobs_fast(request: JobSearchRequest):
         companies_analyzed = []
         processed_count = 0
         
-        # Rate limiting: Process jobs in batches to respect 20 req/min limit
-        # For fast endpoint, process max 3 jobs per batch (smaller batches for faster response)
-        max_jobs_per_batch = 3
-        total_jobs = len(jobs)
+        # For immediate results, just return the JobSpy data without RapidAPI processing
+        logger.info(f"Returning {len(jobs)} jobs from JobSpy without RapidAPI processing")
         
-        logger.info(f"Processing {total_jobs} jobs in batches of {max_jobs_per_batch}")
-        
-        # Process jobs in batches
-        for batch_start in range(0, total_jobs, max_jobs_per_batch):
-            batch_end = min(batch_start + max_jobs_per_batch, total_jobs)
-            batch_jobs = jobs[batch_start:batch_end]
+        # Create simple company analysis from JobSpy data
+        for job in jobs[:10]:  # Limit to first 10 jobs for quick response
+            company = job.get('company', '')
+            if not company:
+                continue
+                
+            company_analysis = {
+                "company": company,
+                "job_title": job.get('title', ''),
+                "job_url": job.get('job_url', ''),
+                "has_ta_team": False,  # Will be determined later
+                "contacts_found": 0,
+                "top_contacts": [],
+                "recommendation": "PENDING - RapidAPI analysis required",
+                "timestamp": datetime.now().isoformat()
+            }
             
-            logger.info(f"Processing batch {batch_start//max_jobs_per_batch + 1}: jobs {batch_start+1}-{batch_end}")
-            
-            # Process jobs in current batch
-            for job in batch_jobs:
-                company = job.get('company', '')
-                
-                # Pre-filter enterprise companies to avoid wasting API calls
-                enterprise_companies = ["google", "microsoft", "amazon", "apple", "meta", "facebook", "netflix", "tesla", "lockheed martin", "general dynamics", "boeing", "ibm", "oracle", "salesforce", "adobe", "intel", "nvidia", "uber", "airbnb", "twitter", "linkedin", "paypal", "jpmorgan", "goldman sachs", "morgan stanley"]
-                
-                if company and any(enterprise in company.lower() for enterprise in enterprise_companies):
-                    logger.warning(f"⚠️  SKIP: {company} is enterprise company - guaranteed TA team")
-                    continue
-                
-                # Skip processed jobs quickly
-                job_fingerprint = memory_manager.create_job_fingerprint(job)
-                if memory_manager.is_job_processed(job_fingerprint):
-                    continue
-                    
-                processed_count += 1
-                logger.info(f"Processing job {processed_count}: {job.get('title')} at {company}")
-                    
-                # Find contacts and analyze company
-                try:
-                    contacts, has_ta_team = contact_finder.find_contacts(company, job.get('title', ''), [])
-                except Exception as e:
-                    logger.error(f"Error in find_contacts for {company}: {e}")
-                    contacts, has_ta_team = [], False
-                
-                # Analyze company for recruiting opportunity
-                company_analysis = {
-                    "company": company,
-                    "job_title": job.get('title', ''),
-                    "job_url": job.get('job_url', ''),
-                    "has_ta_team": has_ta_team,
-                    "contacts_found": len(contacts),
-                    "top_contacts": contacts[:3] if contacts else [],
-                    "recommendation": "TARGET" if not has_ta_team else "SKIP - Has TA team",
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                companies_analyzed.append(company_analysis)
-                
-                # Mark job as processed
-                memory_manager.mark_job_processed(job_fingerprint)
-            
-            # Wait between batches to respect rate limits
-            if batch_end < total_jobs:
-                logger.info(f"Batch complete. Waiting 60 seconds before next batch...")
-                time.sleep(60)
+            companies_analyzed.append(company_analysis)
+            processed_count += 1
             
         return JobSearchResponse(
             companies_analyzed=companies_analyzed,
@@ -567,6 +646,9 @@ async def search_jobs_stream(request: JobSearchRequest):
     """Stream job search results for immediate feedback"""
     def generate_stream():
         try:
+            # Initialize leads list
+            leads = []
+            
             # Send initial status
             yield f"data: {json.dumps({'type': 'status', 'message': 'Starting job search...', 'timestamp': datetime.now().isoformat()})}\n\n"
             
@@ -575,8 +657,8 @@ async def search_jobs_stream(request: JobSearchRequest):
             search_term = search_params.get("search_term", request.query)
             yield f"data: {json.dumps({'type': 'status', 'message': f'Searching for: {search_term}', 'timestamp': datetime.now().isoformat()})}\n\n"
             
-            # Search jobs - get all available jobs, don't limit by max_leads yet
-            jobs = job_scraper.search_jobs(search_params, max_results=50)
+            # Search jobs - get all available jobs (increased from 50 to 500)
+            jobs = job_scraper.search_jobs(search_params, max_results=500)
             yield f"data: {json.dumps({'type': 'jobs_found', 'count': len(jobs), 'timestamp': datetime.now().isoformat()})}\n\n"
             
             if not jobs:
@@ -592,6 +674,9 @@ async def search_jobs_stream(request: JobSearchRequest):
             total_jobs = len(jobs)
             
             yield f"data: {json.dumps({'type': 'status', 'message': f'Processing {total_jobs} jobs in batches of {max_jobs_per_batch}', 'timestamp': datetime.now().isoformat()})}\n\n"
+            
+            # Track companies we've already analyzed to avoid duplicate RapidAPI calls
+            analyzed_companies = {}
             
             # Process jobs in batches
             for batch_start in range(0, total_jobs, max_jobs_per_batch):
@@ -615,14 +700,85 @@ async def search_jobs_stream(request: JobSearchRequest):
                         yield f"data: {json.dumps({'type': 'skipped', 'message': skip_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
                         continue
                     
+                    # Check if we've already analyzed this company in this session
+                    if company in analyzed_companies:
+                        company_analysis = analyzed_companies[company]
+                        has_ta_team = company_analysis['has_ta_team']
+                        company_found = company_analysis['company_found']
+                        contacts = company_analysis.get('contacts', [])
+                        
+                        if has_ta_team:
+                            ta_msg = f'Skipping {company}: Has internal TA team (cached)'
+                            yield f"data: {json.dumps({'type': 'skipped', 'message': ta_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+                            memory_manager.mark_job_processed(job_fingerprint)
+                            continue
+                        
+                        if not company_found:
+                            contact_msg = f'Company profile not found for {company} (cached)'
+                            yield f"data: {json.dumps({'type': 'skipped', 'message': contact_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+                            memory_manager.mark_job_processed(job_fingerprint)
+                            continue
+                        
+                        if not contacts:
+                            contact_msg = f'No contacts found for {company} (cached)'
+                            yield f"data: {json.dumps({'type': 'skipped', 'message': contact_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+                            memory_manager.mark_job_processed(job_fingerprint)
+                            continue
+                        
+                        # Process cached contacts
+                        for contact in contacts[:3]:
+                            email = contact_finder.find_email(contact['title'], company)
+                            if email and not memory_manager.is_email_contacted(email):
+                                message = ""
+                                if request.auto_generate_messages:
+                                    message = email_generator.generate_outreach(
+                                        job_title=job.get('title', ''),
+                                        company=company,
+                                        contact_title=contact['title'],
+                                        job_url=job.get('job_url', '')
+                                    )
+                                
+                                score = contact_finder.calculate_lead_score(contact, job, has_ta_team)
+                                lead = {
+                                    "name": contact['full_name'],
+                                    "title": contact['title'],
+                                    "company": company,
+                                    "email": email,
+                                    "job_title": job.get('title', ''),
+                                    "job_url": job.get('job_url', ''),
+                                    "message": message,
+                                    "score": score,
+                                    "timestamp": datetime.now().isoformat()
+                                }
+                                yield f"data: {json.dumps({'type': 'lead', 'data': lead, 'timestamp': datetime.now().isoformat()})}\n\n"
+                                leads.append(lead)
+                        
+                        memory_manager.mark_job_processed(job_fingerprint)
+                        processed_count += 1
+                        continue
+                    
                     # Find contacts
                     role_hint = job.get('title', '')
                     keywords = [role_hint] + search_params.get('keywords', [])
-                    contacts, has_ta_team = contact_finder.find_contacts(company, role_hint, keywords)
+                    contacts, has_ta_team, employee_roles, company_found = contact_finder.find_contacts(company, role_hint, keywords, job.get('linkedin_company_url'))
+                    
+                    # Cache the company analysis results
+                    analyzed_companies[company] = {
+                        'has_ta_team': has_ta_team,
+                        'company_found': company_found,
+                        'contacts': contacts,
+                        'employee_roles': employee_roles
+                    }
                     
                     if has_ta_team:
                         ta_msg = f'Skipping {company}: Has internal TA team'
                         yield f"data: {json.dumps({'type': 'skipped', 'message': ta_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+                        memory_manager.mark_job_processed(job_fingerprint)
+                        continue
+                    
+                    if not company_found:
+                        contact_msg = f'Company profile not found for {company}'
+                        yield f"data: {json.dumps({'type': 'skipped', 'message': contact_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
                         memory_manager.mark_job_processed(job_fingerprint)
                         continue
                     
@@ -653,33 +809,28 @@ async def search_jobs_stream(request: JobSearchRequest):
                             score = contact_finder.calculate_lead_score(contact, job, has_ta_team)
                             
                             lead = {
-                            "name": contact['full_name'],
-                            "title": contact['title'],
-                            "company": company,
-                            "email": email,
-                            "job_title": job.get('title', ''),
-                            "job_url": job.get('job_url', ''),
-                            "message": message,
-                            "score": score,
-                            "timestamp": datetime.now().isoformat()
-                        }
+                                "name": contact['full_name'],
+                                "title": contact['title'],
+                                "company": company,
+                                "email": email,
+                                "job_title": job.get('title', ''),
+                                "job_url": job.get('job_url', ''),
+                                "message": message,
+                                "score": score,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            
+                            # Stream the lead immediately
+                            yield f"data: {json.dumps({'type': 'lead', 'data': lead, 'timestamp': datetime.now().isoformat()})}\n\n"
+                            leads.append(lead)
                         
-                        # Stream the lead immediately
-                        yield f"data: {json.dumps({'type': 'lead', 'data': lead, 'timestamp': datetime.now().isoformat()})}\n\n"
-                        leads.append(lead)
-                        
-                        # Check if we've reached max_leads (apply limit after email discovery)
-                        if len(leads) >= request.max_leads:
-                            yield f"data: {json.dumps({'type': 'status', 'message': f'Reached max_leads limit ({request.max_leads}) - stopping lead generation', 'timestamp': datetime.now().isoformat()})}\n\n"
-                            break
+
                 
                 # Mark job as processed
                 memory_manager.mark_job_processed(job_fingerprint)
                 processed_count += 1
                 
-                # Stop processing jobs if we've reached max_leads
-                if len(leads) >= request.max_leads:
-                    break
+
             
             # Wait between batches to respect rate limits
             if batch_end < total_jobs:
@@ -723,6 +874,136 @@ async def analyze_contract_opportunities(request: ContractOpportunityRequest):
         
     except Exception as e:
         logger.error(f"Error in contract opportunity analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/create-instantly-campaign", response_model=InstantlyCampaignResponse)
+async def create_instantly_campaign(request: InstantlyCampaignRequest):
+    """Create an Instantly.ai campaign with leads (without sending emails)"""
+    try:
+        # Parse query and search for jobs
+        search_params = job_scraper.parse_query(request.query)
+        jobs = job_scraper.search_jobs(search_params, max_results=request.max_leads * 3)
+        
+        if not jobs:
+            raise HTTPException(status_code=404, detail="No jobs found matching criteria")
+        
+        leads = []
+        processed_companies = set()
+        
+        # Process jobs to find leads
+        for job in jobs:
+            if len(leads) >= request.max_leads:
+                break
+                
+            company = job.get('company', '')
+            if company in processed_companies:
+                continue
+                
+            processed_companies.add(company)
+            
+            # Find contacts and analyze company
+            try:
+                description = job.get('description') or job.get('job_level') or ''
+                result = contact_finder.find_contacts(
+                    company=company,
+                    role_hint=job.get('title', ''),
+                    keywords=job_scraper.extract_keywords(description),
+                    company_website=job.get('company_website')
+                )
+                
+                contacts, has_ta_team, employee_roles, company_found = result
+                
+                # Skip companies with TA teams
+                if has_ta_team:
+                    continue
+                
+                # Get Hunter.io emails
+                hunter_emails = []
+                if not has_ta_team and company_found and job.get('company_website'):  # Only if no TA team AND company found AND domain found
+                    try:
+                        hunter_emails = contact_finder.find_hunter_emails_for_target_company(
+                            company=company,
+                            job_title=job.get('title', ''),
+                            employee_roles=employee_roles,
+                            company_website=job.get('company_website')
+                        )
+                        # Log success only if emails were actually found
+                        if hunter_emails:
+                            logger.info(f"✅ Found {len(hunter_emails)} Hunter.io emails for {company}")
+                        else:
+                            logger.warning(f"⚠️  No Hunter.io emails found for {company}")
+                    except Exception as e:
+                        logger.error(f"Hunter.io error for {company}: {e}")
+                elif has_ta_team:
+                    logger.info(f"⏭️  Skipping Hunter.io for {company} - has TA team")
+                elif not company_found:
+                    logger.info(f"⏭️  Skipping Hunter.io for {company} - company not found")
+                elif not job.get('company_website'):
+                    logger.info(f"⏭️  Skipping Hunter.io for {company} - no domain found")
+                
+                # Create leads from contacts and emails
+                for contact in contacts[:3]:  # Top 3 contacts
+                    email = contact_finder.find_email(contact.get('title', ''), company)
+                    if email:
+                        score = contact_finder.calculate_lead_score(contact, job, has_ta_team)
+                        if score >= request.min_score:
+                            lead = {
+                                "name": contact.get('name', ''),
+                                "title": contact.get('title', ''),
+                                "company": company,
+                                "email": email,
+                                "job_title": job.get('title', ''),
+                                "job_url": job.get('job_url', ''),
+                                "score": score,
+                                "hunter_emails": hunter_emails,
+                                "company_website": job.get('company_website', '')
+                            }
+                            leads.append(lead)
+                
+                # Add Hunter.io emails as leads if no contacts found
+                if not contacts and hunter_emails:
+                    for email in hunter_emails[:2]:  # Top 2 emails
+                        lead = {
+                            "name": "Hiring Manager",
+                            "title": "Hiring Manager",
+                            "company": company,
+                            "email": email,
+                            "job_title": job.get('title', ''),
+                            "job_url": job.get('job_url', ''),
+                            "score": 0.7,  # Default score for Hunter.io emails
+                            "hunter_emails": hunter_emails,
+                            "company_website": job.get('company_website', '')
+                        }
+                        leads.append(lead)
+                        
+            except Exception as e:
+                logger.error(f"Error processing {company}: {e}")
+                continue
+        
+        # Create Instantly campaign
+        campaign_id = None
+        status = "failed"
+        
+        if leads:
+            campaign_id = instantly_manager.create_recruiting_campaign(
+                leads=leads,
+                campaign_name=request.campaign_name
+            )
+            status = "created" if campaign_id else "failed"
+        else:
+            status = "no_leads"
+        
+        return InstantlyCampaignResponse(
+            campaign_id=campaign_id,
+            campaign_name=request.campaign_name or f"Recruiting_Campaign_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            leads_added=len(leads),
+            total_leads_found=len(leads),
+            status=status,
+            timestamp=datetime.now().isoformat()
+        )
+        
+    except Exception as e:
+        logger.error(f"Error creating Instantly campaign: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/get-company-jobs", response_model=CompanyJobsResponse)
@@ -846,10 +1127,11 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                     continue
                 
                 # Analyze company
-                contacts, has_ta_team = contact_finder.find_contacts(
+                contacts, has_ta_team, employee_roles, company_found = contact_finder.find_contacts(
                     company=company,
                     role_hint=job.get('title', ''),
-                    keywords=job_scraper.extract_keywords(job.get('description', ''))
+                    keywords=job_scraper.extract_keywords(job.get('description', '')),
+                    linkedin_company_url=job.get('linkedin_company_url')
                 )
                 
                 # Create result
@@ -973,4 +1255,4 @@ async def get_target_companies(limit: int = 20, offset: int = 0):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
