@@ -394,12 +394,13 @@ async def search_jobs_fast(request: JobSearchRequest):
                 memory_manager.mark_job_processed(job_fingerprint)
                 continue
                 
-            # Process only the top contact for speed
+            # Process only the top contact for speed - but only if we have real data
             if contacts:
                 contact = contacts[0]
                 email = contact_finder.find_email(contact['full_name'], company)
                 
-                if email:
+                # Only create leads with real email addresses
+                if email and email != "contact@google.com" and "@" in email and not email.startswith("contact@"):
                     score = contact_finder.calculate_lead_score(contact, job, has_ta_team)
                     
                     lead = {
@@ -414,6 +415,8 @@ async def search_jobs_fast(request: JobSearchRequest):
                         "timestamp": datetime.now().isoformat()
                     }
                     leads.append(lead)
+                else:
+                    logger.warning(f"Skipping {company}: No valid email found for {contact['full_name']}")
             
             memory_manager.mark_job_processed(job_fingerprint)
             

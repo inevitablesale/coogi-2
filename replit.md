@@ -77,7 +77,9 @@ The application follows a modular architecture with clear separation of concerns
 ### Current State
 - **Development**: FastAPI server with auto-generated documentation
 - **Configuration**: Environment variables for API key management, RapidAPI key configured
-- **Error Handling**: Uses live APIs with graceful fallback only for email discovery
+- **Data Integrity**: System only returns authentic data, no mock/demo data in production mode
+- **Email Discovery**: Requires Hunter.io API key for contact email addresses
+- **Error Handling**: Graceful handling when APIs are unavailable, with clear user feedback
 
 ### Production Considerations
 - **Railway Deployment**: Configured with railway.json and Procfile for seamless deployment
@@ -109,5 +111,7 @@ The application follows a modular architecture with clear separation of concerns
 - **Real-time Streaming**: Implemented Server-Sent Events streaming API for immediate progress updates
 - **Advanced Prompt Engineering**: Enhanced AI prompts with expert personas, few-shot examples, and structured templates
 - **Timeout Management**: Optimized processing pipeline to respect client timeout constraints
+- **Data Integrity Enforcement**: Removed all demo/mock data generation, system only returns authentic results
+- **Clear API Requirements**: Added proper feedback when Hunter.io API key is required for email discovery
 
 The architecture prioritizes modularity and maintainability while providing a clear upgrade path from demo to production deployment. The system is designed to handle the complete recruiting workflow from job discovery through successful candidate placement.

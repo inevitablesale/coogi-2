@@ -121,7 +121,8 @@ class ContactFinder:
             # Check if the API call was successful
             if not people_data.get("success", False):
                 logger.warning(f"SaleLeads API returned unsuccessful response for {company}")
-                return self._get_demo_contacts(company, role_hint, keywords)
+                logger.info(f"🎯 TARGET COMPANY: {company} - no TA team, high conversion opportunity")
+                return [], False  # Return empty instead of demo data
             
             people = people_data.get("data", [])
             logger.info(f"Found {len(people)} people from SaleLeads API for {company}")
@@ -246,30 +247,9 @@ class ContactFinder:
             return self._get_demo_email(title, company)
     
     def _get_demo_email(self, title: str, company: str) -> Optional[str]:
-        """Get demo email based on title and company"""
-        # Create a simple mapping based on name/title
-        name_key = title.lower().replace(" ", ".").split("@")[0]
-        
-        # Try to find matching demo email
-        for key, email in self.demo_emails.items():
-            if key in name_key or any(word in key for word in name_key.split(".")):
-                return email
-        
-        # Generate a plausible email if no match found
-        domain = company.lower().replace(" ", "").replace("inc", "").replace("corp", "")
-        if "startup" in domain:
-            domain = "startupxyz"
-        elif "enterprise" in domain:
-            domain = "enterprisesolutions"
-        elif "growth" in domain:
-            domain = "growthco"
-        elif "cloud" in domain:
-            domain = "cloudtech"
-        elif "tech" in domain:
-            domain = "techcorp"
-        
-        name_part = name_key.split(".")[0] if "." in name_key else name_key[:8]
-        return f"{name_part}@{domain}.com"
+        """DEMO MODE - Return None to avoid fake data"""
+        logger.warning(f"🚫 EMAIL DISCOVERY UNAVAILABLE: Hunter.io API key required for {title} at {company}")
+        return None  # Return None instead of fake emails
     
     def _find_email_with_hunter(self, title: str, company: str) -> Optional[str]:
         """Find email address using Hunter.io API"""
