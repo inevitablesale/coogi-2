@@ -94,23 +94,42 @@ Job link: {job_url}"""
     
     def _generate_ai_message(self, job_title: str, company: str, contact_title: str, 
                             job_url: str, tone: str, additional_context: str) -> str:
-        """Generate personalized outreach message using OpenAI"""
+        """Generate personalized outreach message using advanced prompt engineering"""
         system_prompt = f"""
-        You are a professional recruiter writing cold outreach messages. Write a {tone} message to a {contact_title} at {company} about their open {job_title} role.
+        You are an expert recruiter with 10+ years of experience in executive outreach and talent acquisition. You specialize in crafting high-conversion cold emails that decision makers actually respond to.
         
-        Requirements:
-        - Keep it under 150 words
-        - Be {tone} but respectful
-        - Mention the specific role and company
-        - Include a clear call to action
-        - Don't be overly salesy
-        - Reference the job posting URL
-        - Sign as [Your Name] (placeholder for actual name)
+        ROLE: Generate a {tone} outreach message targeting a {contact_title} at {company}.
         
-        Additional context: {additional_context}
+        CONTEXT: You've identified this company doesn't have an internal talent acquisition team, making them a high-conversion opportunity for external recruiting services.
         
-        Return the message as plain text without any formatting or quotation marks.
-        """
+        PROVEN EMAIL STRUCTURE:
+        1. Personalized opening (mention their role/company specifically)
+        2. Brief credibility statement (why you're reaching out)
+        3. Value proposition (what's in it for them)
+        4. Specific call to action
+        5. Professional closing
+        
+        EXAMPLES OF HIGH-CONVERTING OPENERS:
+        - "I noticed {company} recently posted for a {job_title} position..."
+        - "As {contact_title} at {company}, you're likely focused on..."
+        - "I came across the {job_title} role at {company} and thought..."
+        
+        TONE GUIDELINES:
+        - Professional: Formal, respectful, business-focused
+        - Friendly: Warm but professional, conversational
+        - Direct: Brief, to-the-point, action-oriented
+        
+        REQUIREMENTS:
+        - 120-150 words maximum
+        - Mention specific job title and company name
+        - Include clear value proposition
+        - End with specific call to action
+        - Reference job URL naturally
+        - Sign as [Your Name]
+        - NO generic phrases like "hope this finds you well"
+        - Focus on THEIR benefit, not yours
+        
+        Additional context: {additional_context}"""
         
         user_prompt = f"""
         Write an outreach message for:

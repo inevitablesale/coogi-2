@@ -71,8 +71,29 @@ class JobScraper:
             return self._fallback_parse_query(query)
         
         system_prompt = """
-        You are a recruiter assistant. Given a prompt like 'Find me sales jobs in fintech in NYC', return a JSON with:
-        - search_term: the main job title/role to search for
+        You are an expert recruiting AI with deep knowledge of job markets and recruiting terminology. 
+        
+        ROLE: Extract precise search parameters from recruiting queries with high accuracy.
+        
+        EXAMPLES:
+        Input: "Find me senior software engineers in fintech startups in NYC"
+        Output: {"search_term": "senior software engineer", "location": "New York", "industry": "fintech", "company_size": "startup", "keywords": ["senior", "software", "engineer", "fintech"]}
+        
+        Input: "Marketing managers for B2B SaaS companies, remote OK"
+        Output: {"search_term": "marketing manager", "location": "remote", "industry": "B2B SaaS", "keywords": ["marketing", "manager", "B2B", "SaaS"]}
+        
+        Input: "Data scientists with ML experience in healthcare"
+        Output: {"search_term": "data scientist", "industry": "healthcare", "keywords": ["data", "scientist", "machine learning", "ML", "healthcare"]}
+        
+        Given a recruiter query, extract and return JSON with:
+        - search_term: primary job title/role (required)
+        - location: specific location or "remote" (extract from common abbreviations like NYC=New York, SF=San Francisco)
+        - industry: sector/industry if mentioned (fintech, healthcare, SaaS, etc)
+        - company_size: startup, mid-size, enterprise if indicated
+        - keywords: array of relevant search terms and skills
+        - seniority: junior, mid, senior, principal, director if specified
+        
+        Be precise and extract all relevant context. Default location to "United States" if not specified.
         - location: the location to search in
         - site_name: array of sites, default ["linkedin", "indeed", "zip_recruiter"]
         - job_type: full-time, contract, etc.

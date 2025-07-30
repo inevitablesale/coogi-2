@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import os
@@ -12,6 +13,7 @@ from utils.email_generator import EmailGenerator
 from utils.memory_manager import MemoryManager
 import requests  # Add missing import for company analysis API calls
 import time  # Add time import for rate limiting
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -360,6 +362,106 @@ async def analyze_companies(request: CompanyAnalysisRequest):
     except Exception as e:
         logger.error(f"Error in company analysis: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/search-jobs-stream")
+async def search_jobs_stream(request: JobSearchRequest):
+    """Stream job search results for immediate feedback"""
+    def generate_stream():
+        try:
+            # Send initial status
+            yield f"data: {json.dumps({'type': 'status', 'message': 'Starting job search...', 'timestamp': datetime.now().isoformat()})}\n\n"
+            
+            # Parse query and send update
+            search_params = job_scraper.parse_query(request.query)
+            search_term = search_params.get("search_term", request.query)
+            yield f"data: {json.dumps({'type': 'status', 'message': f'Searching for: {search_term}', 'timestamp': datetime.now().isoformat()})}\n\n"
+            
+            # Search jobs and stream progress
+            jobs = job_scraper.search_jobs(search_params, max_results=request.max_leads * 3)
+            yield f"data: {json.dumps({'type': 'jobs_found', 'count': len(jobs), 'timestamp': datetime.now().isoformat()})}\n\n"
+            
+            if not jobs:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'No jobs found matching criteria', 'timestamp': datetime.now().isoformat()})}\n\n"
+                return
+            
+            leads = []
+            processed_count = 0
+            
+            for i, job in enumerate(jobs[:request.max_leads]):
+                company = job.get('company', '')
+                company_msg = f'Analyzing company {i+1}/{min(len(jobs), request.max_leads)}: {company}'
+                yield f"data: {json.dumps({'type': 'processing', 'message': company_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+                
+                # Check if already processed
+                job_fingerprint = memory_manager.generate_job_fingerprint(job)
+                if memory_manager.is_job_processed(job_fingerprint):
+                    skip_msg = f'Already processed: {company}'
+                    yield f"data: {json.dumps({'type': 'skipped', 'message': skip_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+                    continue
+                
+                # Find contacts
+                role_hint = job.get('title', '')
+                keywords = [role_hint] + search_params.get('keywords', [])
+                contacts, has_ta_team = contact_finder.find_contacts(company, role_hint, keywords)
+                
+                if has_ta_team:
+                    ta_msg = f'Skipping {company}: Has internal TA team'
+                    yield f"data: {json.dumps({'type': 'skipped', 'message': ta_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+                    memory_manager.mark_job_processed(job_fingerprint)
+                    continue
+                
+                if not contacts:
+                    contact_msg = f'No contacts found for {company}'
+                    yield f"data: {json.dumps({'type': 'skipped', 'message': contact_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+                    memory_manager.mark_job_processed(job_fingerprint)
+                    continue
+                
+                # Process each contact
+                for contact in contacts[:2]:  # Limit to top 2 contacts per company
+                    email = contact_finder.find_email(contact['full_name'], company)
+                    if not email:
+                        continue
+                    
+                    # Generate message if requested
+                    message = ""
+                    if request.auto_generate_messages:
+                        message = email_generator.generate_outreach(
+                            job_title=job.get('title', ''),
+                            company=company,
+                            contact_title=contact['title'],
+                            job_url=job.get('job_url', '')
+                        )
+                    
+                    # Calculate score and create lead
+                    score = contact_finder.calculate_lead_score(contact, job, has_ta_team)
+                    
+                    lead = {
+                        "name": contact['full_name'],
+                        "title": contact['title'],
+                        "company": company,
+                        "email": email,
+                        "job_title": job.get('title', ''),
+                        "job_url": job.get('job_url', ''),
+                        "message": message,
+                        "score": score,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                    # Stream the lead immediately
+                    yield f"data: {json.dumps({'type': 'lead', 'data': lead, 'timestamp': datetime.now().isoformat()})}\n\n"
+                    leads.append(lead)
+                
+                processed_count += 1
+                memory_manager.mark_job_processed(job_fingerprint)
+            
+            # Send final summary
+            yield f"data: {json.dumps({'type': 'complete', 'summary': {'leads_found': len(leads), 'jobs_processed': processed_count, 'total_jobs': len(jobs)}, 'timestamp': datetime.now().isoformat()})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Error in streaming job search: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e), 'timestamp': datetime.now().isoformat()})}\n\n"
+    
+    return StreamingResponse(generate_stream(), media_type="text/event-stream")
 
 if __name__ == "__main__":
     import uvicorn
