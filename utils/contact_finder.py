@@ -90,6 +90,7 @@ class ContactFinder:
     def _get_contacts_from_rapidapi(self, company: str, role_hint: str, keywords: List[str]) -> Tuple[List[Dict[str, Any]], bool]:
         """Get company contacts from RapidAPI LinkedIn scraper"""
         try:
+            logger.info(f"Attempting RapidAPI contact discovery for company: {company}")
             profile_url = "https://linkedin-company-data.p.rapidapi.com/api/v1/company/profile"
             people_url = "https://linkedin-company-data.p.rapidapi.com/api/v1/company/people"
             headers = {
@@ -98,22 +99,35 @@ class ContactFinder:
             }
             
             # Get company profile
+            logger.info(f"Calling RapidAPI profile endpoint for: {company}")
             profile_resp = requests.get(profile_url, params={"company": company}, headers=headers, timeout=10)
+            logger.info(f"RapidAPI profile response: {profile_resp.status_code}")
+            
             if profile_resp.status_code != 200:
-                return [], False
+                logger.warning(f"RapidAPI profile failed with status {profile_resp.status_code}: {profile_resp.text[:200]}")
+                logger.info(f"RapidAPI unavailable, using demo contacts for {company}")
+                return self._get_demo_contacts(company, role_hint, keywords)
                 
             profile_data = profile_resp.json()
             company_id = profile_data.get("data", {}).get("id")
+            logger.info(f"Found company ID: {company_id}")
+            
             if not company_id:
-                return [], False
+                logger.warning(f"No company ID found for {company}, using demo data")
+                return self._get_demo_contacts(company, role_hint, keywords)
 
             # Get company people
+            logger.info(f"Calling RapidAPI people endpoint for company ID: {company_id}")
             people_resp = requests.get(people_url, params={"company_id": company_id, "page": 1}, headers=headers, timeout=10)
+            logger.info(f"RapidAPI people response: {people_resp.status_code}")
+            
             if people_resp.status_code != 200:
-                return [], False
+                logger.warning(f"RapidAPI people failed with status {people_resp.status_code}: {people_resp.text[:200]}")
+                return self._get_demo_contacts(company, role_hint, keywords)
                 
             people_data = people_resp.json()
             people = people_data.get("data", [])
+            logger.info(f"Found {len(people)} people from RapidAPI")
 
             # Rank contacts by relevance
             dynamic_keywords = [role_hint.lower()] + keywords + ["recruiting", "talent", "people", "founder", "cto", "ceo"]
@@ -136,11 +150,13 @@ class ContactFinder:
             
             contacts = [p for _, p in sorted(ranked, reverse=True)]
             has_ta_team = self._has_talent_acquisition_team(people)
+            logger.info(f"RapidAPI successfully found {len(contacts)} relevant contacts for {company}")
             return contacts, has_ta_team
             
         except Exception as e:
-            logger.error(f"Error getting contacts for {company}: {e}")
-            return [], False
+            logger.error(f"RapidAPI error for {company}: {e}")
+            logger.info(f"Falling back to demo data for {company}")
+            return self._get_demo_contacts(company, role_hint, keywords)
     
     def _calculate_contact_score(self, contact: Dict[str, Any], role_hint: str, keywords: List[str]) -> float:
         """Calculate relevance score for a contact"""
