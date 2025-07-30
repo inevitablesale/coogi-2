@@ -95,6 +95,7 @@ The application follows a modular architecture with clear separation of concerns
 - **Architecture Migration**: Converted from Streamlit web app to FastAPI REST API
 - **Railway Configuration**: Added railway.json, Procfile, and deployment configuration
 - **API Key Integration**: Configured RapidAPI key for LinkedIn scraping functionality
+- **JobSpy Integration**: Updated to use external JobSpy API (https://coogi-jobspy-production.up.railway.app/jobs) for real job data
 - **GitHub Preparation**: Added comprehensive README.md, .gitignore, and documentation
 - **Environment Setup**: Created .env.example for easy configuration management
 

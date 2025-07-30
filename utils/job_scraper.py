@@ -3,12 +3,8 @@ import json
 import hashlib
 import logging
 from typing import Dict, List, Any, Optional
-# Import jobspy conditionally - handle missing dependency gracefully
-scrape_jobs = None
-try:
-    from jobspy import scrape_jobs
-except ImportError:
-    pass  # Will use demo mode
+# Use external JobSpy API instead of local library
+import requests
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -17,6 +13,7 @@ class JobScraper:
     def __init__(self):
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if os.getenv("OPENAI_API_KEY") else None
         self.demo_mode = not bool(os.getenv("OPENAI_API_KEY"))
+        self.jobspy_api_url = "https://coogi-jobspy-production.up.railway.app/jobs"
         
         # Demo jobs for testing
         self.demo_jobs = [
@@ -136,48 +133,108 @@ class JobScraper:
             "search_term": search_term,
             "location": location,
             "site_name": ["linkedin", "indeed", "zip_recruiter"],
-            "job_type": "full-time",
-            "results_wanted": 200,
+            "job_type": "fulltime",
+            "results_wanted": 100,
+            "enforce_annual_salary": True,
             "keywords": keywords
         }
     
     def search_jobs(self, search_params: Dict[str, Any], max_results: int = 50) -> List[Dict[str, Any]]:
-        """Search for jobs using JobSpy or demo data"""
-        if self.demo_mode:
-            # Return demo jobs filtered by search term
-            search_term = search_params.get("search_term", "").lower()
-            filtered_jobs = []
-            
-            for job in self.demo_jobs:
-                if (not search_term or 
-                    search_term in job["title"].lower() or 
-                    search_term in job["description"].lower()):
-                    filtered_jobs.append(job)
-            
-            return filtered_jobs[:max_results]
-        
+        """Search for jobs using external JobSpy API or demo data"""
         try:
-            # Use JobSpy for real job scraping
-            if scrape_jobs is None:
-                raise ImportError("JobSpy not available")
-            jobs_df = scrape_jobs(
-                site_name=search_params.get("site_name", ["linkedin"]),
-                search_term=search_params.get("search_term", ""),
-                location=search_params.get("location", ""),
-                results_wanted=min(max_results, search_params.get("results_wanted", 200)),
-                hours_old=search_params.get("hours_old", 24),
-                job_type=search_params.get("job_type", "full-time")
-            )
+            # Use external JobSpy API for real job scraping
+            api_params = {
+                "query": search_params.get("search_term", ""),
+                "location": search_params.get("location", "remote"),
+                "sites": ",".join(search_params.get("site_name", ["linkedin", "indeed", "zip_recruiter"])),
+                "enforce_annual_salary": search_params.get("enforce_annual_salary", True),
+                "results_wanted": min(max_results, search_params.get("results_wanted", 100)),
+                "hours_old": search_params.get("hours_old", 24)
+            }
             
-            if jobs_df is not None and not jobs_df.empty:
-                return jobs_df.to_dict('records')
+            logger.info(f"Calling JobSpy API with params: {api_params}")
+            response = requests.get(self.jobspy_api_url, params=api_params, timeout=30)
+            
+            if response.status_code == 200:
+                jobs_data = response.json()
+                if jobs_data and len(jobs_data) > 0:
+                    # Convert API response to our expected format
+                    formatted_jobs = []
+                    jobs_list = jobs_data if isinstance(jobs_data, list) else [jobs_data]
+                    
+                    for job in jobs_list:
+                        if len(formatted_jobs) >= max_results:
+                            break
+                            
+                        formatted_job = {
+                            "title": job.get("title", ""),
+                            "company": job.get("company", ""),
+                            "location": self._format_location(job),
+                            "description": job.get("description", ""),
+                            "job_url": job.get("job_url", ""),
+                            "salary": self._format_salary(job),
+                            "date_posted": job.get("date_posted", ""),
+                            "job_type": job.get("job_type", ""),
+                            "site": job.get("site", "")
+                        }
+                        formatted_jobs.append(formatted_job)
+                    
+                    logger.info(f"Successfully retrieved {len(formatted_jobs)} jobs from JobSpy API")
+                    return formatted_jobs
+                else:
+                    logger.warning("No jobs found from JobSpy API, falling back to demo data")
+                    return self._get_demo_jobs_filtered(search_params, max_results)
             else:
-                logger.warning("No jobs found with JobSpy, falling back to demo data")
-                return self.demo_jobs[:max_results]
+                logger.error(f"JobSpy API returned status {response.status_code}: {response.text}")
+                return self._get_demo_jobs_filtered(search_params, max_results)
                 
         except Exception as e:
-            logger.error(f"Error scraping jobs: {e}")
-            return self.demo_jobs[:max_results]
+            logger.error(f"Error calling JobSpy API: {e}")
+            return self._get_demo_jobs_filtered(search_params, max_results)
+    
+    def _format_salary(self, job: Dict[str, Any]) -> str:
+        """Format salary information from job data"""
+        min_amount = job.get("min_amount")
+        max_amount = job.get("max_amount")
+        interval = job.get("interval", "yearly")
+        
+        try:
+            if min_amount and max_amount:
+                return f"${min_amount:,} - ${max_amount:,} ({interval})"
+            elif min_amount:
+                return f"${min_amount:,}+ ({interval})"
+            elif max_amount:
+                return f"Up to ${max_amount:,} ({interval})"
+            else:
+                return ""
+        except (ValueError, TypeError):
+            return ""
+    
+    def _format_location(self, job: Dict[str, Any]) -> str:
+        """Format location information from job data"""
+        location_data = job.get("location", {})
+        if isinstance(location_data, dict):
+            city = location_data.get("city", "")
+            state = location_data.get("state", "")
+            country = location_data.get("country", "")
+            
+            parts = [part for part in [city, state, country] if part]
+            return ", ".join(parts) if parts else ""
+        else:
+            return str(location_data) if location_data else ""
+    
+    def _get_demo_jobs_filtered(self, search_params: Dict[str, Any], max_results: int) -> List[Dict[str, Any]]:
+        """Get filtered demo jobs"""
+        search_term = search_params.get("search_term", "").lower()
+        filtered_jobs = []
+        
+        for job in self.demo_jobs:
+            if (not search_term or 
+                search_term in job["title"].lower() or 
+                search_term in job["description"].lower()):
+                filtered_jobs.append(job)
+        
+        return filtered_jobs[:max_results]
     
     def extract_keywords(self, text: str) -> List[str]:
         """Extract relevant keywords from job description"""

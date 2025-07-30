@@ -4,11 +4,12 @@ A FastAPI-based recruiting automation platform that scrapes job postings, finds 
 
 ## Features
 
-- **Job Scraping**: Search multiple job boards (LinkedIn, Indeed, ZipRecruiter)
-- **Contact Discovery**: Find hiring managers and decision makers using LinkedIn scraping
-- **Email Generation**: Create personalized outreach messages using AI
+- **Job Scraping**: Search multiple job boards (LinkedIn, Indeed, ZipRecruiter) using external JobSpy API
+- **Contact Discovery**: Find hiring managers and decision makers using RapidAPI LinkedIn scraping
+- **Email Generation**: Create personalized outreach messages using OpenAI GPT-4o
 - **Lead Scoring**: Intelligent scoring system to prioritize contacts
 - **Memory Management**: Prevent duplicate outreach and track performance
+- **Real-time Data**: Access to live job postings and current market data
 
 ## API Endpoints
 
@@ -130,10 +131,10 @@ The application runs in demo mode when API keys are missing, using sample data f
 
 - **FastAPI**: Web framework for the API
 - **Pydantic**: Data validation and serialization
-- **OpenAI**: AI-powered query parsing and message generation
-- **RapidAPI**: LinkedIn data scraping
-- **Hunter.io**: Email address discovery
-- **JobSpy**: Job posting aggregation
+- **OpenAI GPT-4o**: AI-powered query parsing and message generation
+- **RapidAPI**: LinkedIn data scraping for contact discovery
+- **Hunter.io**: Email address discovery and verification
+- **External JobSpy API**: Real-time job posting aggregation from multiple sources
 
 ## Contributing
 
