@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 # API base URL
-API_BASE_URL = "http://localhost:5000"
+API_BASE_URL = "http://0.0.0.0:5000"
 
 def check_api_health():
     """Check if the FastAPI backend is running"""
