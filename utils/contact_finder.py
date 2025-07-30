@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class ContactFinder:
     def __init__(self):
-        self.rapidapi_key = os.getenv("RAPIDAPI_KEY")
+        self.rapidapi_key = os.getenv("RAPIDAPI_KEY", "9fc749430dmsh203a8a9d7a08955p1eec7djsnb30f69ff59c7")
         self.hunter_api_key = os.getenv("HUNTER_API_KEY")
         self.demo_mode = not (self.rapidapi_key and self.hunter_api_key)
         
