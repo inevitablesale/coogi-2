@@ -5,6 +5,10 @@ from typing import List, Optional, Dict, Any
 import os
 import logging
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import utility modules
 from utils.job_scraper import JobScraper
