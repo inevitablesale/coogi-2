@@ -22,8 +22,68 @@ def check_api_health():
     except requests.exceptions.RequestException:
         return False, None
 
+def search_jobs_streaming(query, max_leads=10, hours_old=24, enforce_salary=True, auto_generate_messages=False, status_container=None):
+    """Search for jobs using streaming API with live status updates"""
+    try:
+        params = {
+            "query": query,
+            "max_leads": max_leads,
+            "hours_old": hours_old,
+            "enforce_salary": enforce_salary,
+            "auto_generate_messages": auto_generate_messages
+        }
+        
+        # Stream the response for real-time updates
+        response = requests.get(f"{API_BASE_URL}/search-jobs-stream", params=params, stream=True, timeout=60)
+        
+        if response.status_code != 200:
+            return False, None
+            
+        leads = []
+        summary = {}
+        
+        for line in response.iter_lines():
+            if line:
+                try:
+                    # Parse each streaming line
+                    line_text = line.decode('utf-8')
+                    if line_text.startswith('data: '):
+                        data = json.loads(line_text[6:])  # Remove 'data: ' prefix
+                        
+                        if data.get('type') == 'status' and status_container:
+                            # Update status display
+                            with status_container:
+                                st.write(f"🔄 {data.get('message', '')}")
+                                
+                        elif data.get('type') == 'lead':
+                            # New lead found
+                            lead_data = data.get('data', {})
+                            leads.append(lead_data)
+                            if status_container:
+                                with status_container:
+                                    st.write(f"✅ Found lead: {lead_data.get('name', 'Unknown')} at {lead_data.get('company', 'Unknown')}")
+                                    
+                        elif data.get('type') == 'summary':
+                            # Final summary
+                            summary = data.get('data', {})
+                            if status_container:
+                                with status_container:
+                                    st.write(f"🎯 **Search Complete**: {summary.get('leads_found', 0)} leads from {summary.get('jobs_processed', 0)} jobs")
+                                    
+                except json.JSONDecodeError:
+                    continue
+                    
+        return True, {
+            'leads': leads,
+            'summary': summary,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+    except requests.exceptions.RequestException as e:
+        return False, str(e)
+
 def search_jobs(query, max_leads=10, hours_old=24, enforce_salary=True, auto_generate_messages=False):
-    """Search for jobs using the API"""
+    """Search for jobs using the fast API (fallback for non-streaming)"""
     try:
         payload = {
             "query": query,
@@ -140,20 +200,46 @@ def main():
         with col5:
             auto_messages = st.checkbox("Auto-generate Messages", value=False)
         
+        # Add streaming option
+        stream_updates = st.checkbox("Show Live Progress", value=True, help="Display real-time status updates during search")
+        
         if st.button("🚀 Search Jobs", type="primary", use_container_width=True):
             if not query.strip():
                 st.error("Please enter a search query")
             else:
-                with st.spinner("Searching for jobs and contacts..."):
-                    success, result = search_jobs(
-                        query, max_leads, hours_old, enforce_salary, auto_messages
+                if stream_updates:
+                    # Use streaming search with live updates
+                    status_container = st.empty()
+                    progress_container = st.container()
+                    
+                    with status_container:
+                        st.info("🔄 Initializing job search...")
+                    
+                    success, result = search_jobs_streaming(
+                        query, max_leads, hours_old, enforce_salary, auto_messages, 
+                        status_container=progress_container
                     )
+                else:
+                    # Use regular search
+                    with st.spinner("Searching for jobs and contacts..."):
+                        success, result = search_jobs(
+                            query, max_leads, hours_old, enforce_salary, auto_messages
+                        )
                 
                 if success and result and isinstance(result, dict):
-                    st.success(f"Found {result.get('jobs_found', 0)} jobs, generated {len(result.get('leads', []))} leads")
+                    # Show final summary
+                    summary = result.get('summary', {})
+                    leads = result.get('leads', [])
+                    
+                    if summary:
+                        jobs_found = summary.get('total_jobs', 0)
+                        jobs_processed = summary.get('jobs_processed', 0) 
+                        leads_found = summary.get('leads_found', len(leads))
+                        st.success(f"✅ Search Complete: {leads_found} leads from {jobs_processed} jobs (found {jobs_found} total)")
+                    else:
+                        st.success(f"Found {result.get('jobs_found', 0)} jobs, generated {len(leads)} leads")
                     
                     # Display results
-                    leads = result.get('leads', [])
                     if leads:
                         st.header("📋 Generated Leads")
                         
