@@ -1,0 +1,742 @@
+# ========================== MCP: Master Control Program ============================
+# Optimized for contract volume and informed outreach
+# Stack:
+# - FastAPI (Python backend)
+# - JobSpy (job scraping)
+# - RapidAPI: Fresh LinkedIn Scraper + Company Profile & People API
+# - Hunter.io (email finding)
+# - OpenAI (intent parsing + outreach writing only)
+# - Supabase/Postgres (memory + logging)
+# - Instantly.ai (email delivery)
+
+import hashlib
+import os
+import openai
+import requests
+import pandas as pd
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+from jobspy import scrape_jobs
+from dotenv import load_dotenv
+import json
+from datetime import datetime, timedelta
+import logging
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# API Keys
+openai.api_key = os.getenv("OPENAI_API_KEY")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+HUNTER_API_KEY = os.getenv("HUNTER_API_KEY")
+INSTANTLY_API_KEY = "MDY2MzE5NmYtZjU5ZS00NDdlLWFlYzQtNDg1NmUwZjA2MjhhOmpUc1NBd2pka1Bkcw=="
+INSTANTLY_SENDER_ID = os.getenv("INSTANTLY_SENDER_ID")
+
+app = FastAPI(
+    title="MCP: Master Control Program",
+    description="Automated contract hunting and outreach system",
+    version="1.0.0"
+)
+
+# ========================== MODELS ============================
+class RecruiterQuery(BaseModel):
+    query: str
+    max_leads: int = 10
+    enforce_annual_salary: Optional[bool] = True
+    hours_old: Optional[int] = 24
+    auto_send_emails: Optional[bool] = False
+
+class LeadResponse(BaseModel):
+    name: str
+    title: str
+    company: str
+    email: str
+    message: str
+    job_url: str
+    score: float
+
+class HuntResponse(BaseModel):
+    leads: List[LeadResponse]
+    jobs_found: int
+    total_processed: int
+    success_rate: float
+
+# ========================== MEMORY ============================
+memory_log = {
+    "contacted_emails": set(),
+    "job_urls": set(),
+    "job_fingerprints": set(),
+    "conversions": [],
+    "title_scores": {},
+    "company_scores": {},
+    "last_hunt_time": None
+}
+
+# Demo mode flag
+DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
+
+# Check if we have real API keys
+def has_real_api_keys():
+    """Check if we have real API keys for full functionality"""
+    try:
+        openai_key = os.getenv("OPENAI_API_KEY", "")
+        rapidapi_key = os.getenv("RAPIDAPI_KEY", "")
+        hunter_key = os.getenv("HUNTER_API_KEY", "")
+        
+        # Check if keys are not placeholder values
+        real_keys = (
+            openai_key and "your_openai" not in openai_key and
+            rapidapi_key and "your_rapidapi" not in rapidapi_key and
+            hunter_key and "your_hunter" not in hunter_key
+        )
+        return real_keys
+    except:
+        return False
+
+# Demo data for testing
+DEMO_JOBS = [
+    {
+        "title": "Senior Software Engineer",
+        "company": "TechCorp Inc",
+        "location": "San Francisco, CA",
+        "description": "We are looking for a senior software engineer with experience in Python, React, and AWS. B2B SaaS experience preferred.",
+        "job_url": "https://linkedin.com/jobs/demo1",
+        "salary": "$120,000 - $180,000"
+    },
+    {
+        "title": "Product Manager",
+        "company": "StartupXYZ",
+        "location": "New York, NY", 
+        "description": "Join our growing team as a Product Manager. Experience with enterprise software and B2B sales required.",
+        "job_url": "https://linkedin.com/jobs/demo2",
+        "salary": "$100,000 - $150,000"
+    },
+    {
+        "title": "Sales Director",
+        "company": "Enterprise Solutions",
+        "location": "Austin, TX",
+        "description": "Lead our sales team in the enterprise space. Experience with SaaS and B2B sales required.",
+        "job_url": "https://linkedin.com/jobs/demo3",
+        "salary": "$130,000 - $200,000"
+    }
+]
+
+DEMO_CONTACTS = [
+    {
+        "full_name": "John Smith",
+        "title": "VP of Engineering",
+        "url": "https://linkedin.com/in/johnsmith"
+    },
+    {
+        "full_name": "Sarah Johnson", 
+        "title": "Head of Talent Acquisition",
+        "url": "https://linkedin.com/in/sarahjohnson"
+    },
+    {
+        "full_name": "Mike Davis",
+        "title": "CTO",
+        "url": "https://linkedin.com/in/mikedavis"
+    }
+]
+
+TITLE_RANK = {
+    "cto": 5,
+    "chief": 5,
+    "vp": 4,
+    "head": 3,
+    "director": 2,
+    "manager": 1,
+    "senior": 3,
+    "lead": 2
+}
+
+# ========================== HELPERS ===========================
+def job_fingerprint(job):
+    """Create a unique fingerprint for a job posting"""
+    key = f"{job.get('title','')}_{job.get('company','')}_{job.get('location','')}"
+    return hashlib.md5(key.encode()).hexdigest()
+
+def parse_query_with_ai(query: str) -> Dict[str, Any]:
+    """Parse recruiter query using AI to extract search parameters"""
+    system = """
+    You are a recruiter assistant. Given a prompt like 'Find me sales jobs in fintech in NYC', return a JSON with:
+    - search_term: the main job title/role to search for
+    - location: the location to search in
+    - site_name: default "linkedin, indeed, zip_recruiter"
+    - job_type: full-time, contract, etc.
+    - country_indeed: if relevant
+    - results_wanted: default 200
+    - enforce_annual_salary: bool, default true
+    - hours_old: int, default 24
+    - keywords: list of relevant skills/technologies
+    """
+    
+    try:
+        # Use the new OpenAI API format
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": query}
+            ],
+            temperature=0.2
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        logger.error(f"Error parsing query with AI: {e}")
+        # Fallback parsing
+        return {
+            "search_term": query,
+            "location": "",
+            "site_name": "linkedin, indeed, zip_recruiter",
+            "job_type": "full-time",
+            "results_wanted": 200,
+            "enforce_annual_salary": True,
+            "hours_old": 24,
+            "keywords": []
+        }
+
+def extract_keywords(text: str) -> List[str]:
+    """Extract relevant keywords from job description"""
+    try:
+        # Use the new OpenAI API format
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "Extract 3-5 keywords describing core skills or functions in this job post. Return only the keywords separated by commas."},
+                {"role": "user", "content": text[:3000]}
+            ],
+            temperature=0.3
+        )
+        keywords = response.choices[0].message.content.strip().split(",")
+        return [kw.strip().lower() for kw in keywords if kw.strip()]
+    except Exception as e:
+        logger.error(f"Error extracting keywords: {e}")
+        return []
+
+def get_company_job_count(company: str) -> int:
+    """Get the number of job postings for a company"""
+    try:
+        url = "https://linkedin-company-data.p.rapidapi.com/api/v1/company/job-count"
+        headers = {
+            "X-RapidAPI-Key": RAPIDAPI_KEY,
+            "X-RapidAPI-Host": "linkedin-company-data.p.rapidapi.com"
+        }
+        resp = requests.get(url, params={"company": company}, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("data", {}).get("total", 0)
+        return 0
+    except Exception as e:
+        logger.error(f"Error getting company job count for {company}: {e}")
+        return 0
+
+def has_talent_acquisition_team(people: List[dict]) -> bool:
+    """Check if company has a talent acquisition team"""
+    ta_keywords = ["talent", "recruiter", "recruiting", "people ops", "hr", "human resources", "people partner"]
+    for person in people:
+        title = person.get("title", "").lower()
+        if any(kw in title for kw in ta_keywords):
+            return True
+    return False
+
+def get_contacts_from_rapidapi(company: str, role_hint: str, keywords: List[str]) -> tuple:
+    """Get company contacts from RapidAPI LinkedIn scraper"""
+    try:
+        profile_url = "https://linkedin-company-data.p.rapidapi.com/api/v1/company/profile"
+        people_url = "https://linkedin-company-data.p.rapidapi.com/api/v1/company/people"
+        headers = {
+            "X-RapidAPI-Key": RAPIDAPI_KEY,
+            "X-RapidAPI-Host": "linkedin-company-data.p.rapidapi.com"
+        }
+        
+        # Get company profile
+        profile_resp = requests.get(profile_url, params={"company": company}, headers=headers, timeout=10)
+        if profile_resp.status_code != 200:
+            return [], False
+            
+        profile_data = profile_resp.json()
+        company_id = profile_data.get("data", {}).get("id")
+        if not company_id:
+            return [], False
+
+        # Get company people
+        people_resp = requests.get(people_url, params={"company_id": company_id, "page": 1}, headers=headers, timeout=10)
+        if people_resp.status_code != 200:
+            return [], False
+            
+        people_data = people_resp.json()
+        people = people_data.get("data", [])
+
+        # Rank contacts by relevance
+        dynamic_keywords = [role_hint.lower()] + keywords + ["recruiting", "talent", "people", "founder", "cto", "ceo"]
+        ranked = []
+        
+        for p in people:
+            title = p.get("title", "").lower()
+            score = max([TITLE_RANK.get(t, 0) for t in title.split() if t in TITLE_RANK], default=0)
+            
+            # Add bonus for keyword matches
+            keyword_matches = sum(1 for k in dynamic_keywords if k in title)
+            score += keyword_matches * 2
+            
+            if any(k in title for k in dynamic_keywords):
+                ranked.append((score, {
+                    "full_name": p.get("full_name", ""),
+                    "title": p.get("title"),
+                    "url": p.get("url", "")
+                }))
+        
+        return [p for _, p in sorted(ranked, reverse=True)], has_talent_acquisition_team(people)
+        
+    except Exception as e:
+        logger.error(f"Error getting contacts for {company}: {e}")
+        return [], False
+
+def find_email_by_title_and_domain(title: str, domain: str) -> Optional[str]:
+    """Find email address using Hunter.io API"""
+    try:
+        url = f"https://api.hunter.io/v2/domain-search"
+        params = {
+            "domain": domain,
+            "api_key": HUNTER_API_KEY,
+            "position": title
+        }
+        resp = requests.get(url, params=params, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            emails = data.get("data", {}).get("emails", [])
+            for e in emails:
+                if e.get("verification") == "verified":
+                    email = e.get("value")
+                    if email and email not in memory_log['contacted_emails']:
+                        return email
+        return None
+    except Exception as e:
+        logger.error(f"Error finding email for {title} at {domain}: {e}")
+        return None
+
+def generate_outreach(job_title: str, company: str, contact_title: str, job_url: str) -> str:
+    """Generate personalized outreach message using OpenAI"""
+    prompt = f"""
+    Write a short, professional cold message for a recruiter to contact a {contact_title} at {company} about their open {job_title} role.
+    
+    Requirements:
+    - Keep it under 150 words
+    - Be professional but friendly
+    - Mention the specific role
+    - Include a clear call to action
+    - Reference the job posting: {job_url}
+    """
+    
+    try:
+        # Use the new OpenAI API format
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a professional recruiter outreach writer. Write concise, personalized messages."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"Error generating outreach: {e}")
+        return f"Hi, I noticed you have an open {job_title} position at {company}. Would you be interested in discussing potential candidates for this role?"
+
+def send_email_via_instantly(email: str, subject: str, message: str) -> Dict[str, Any]:
+    """Send email via Instantly.ai API"""
+    try:
+        url = "https://api.instantly.ai/v1/email/send"
+        headers = {
+            "Authorization": f"Bearer {INSTANTLY_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "sender_id": INSTANTLY_SENDER_ID,
+            "to": email,
+            "subject": subject,
+            "body": message
+        }
+        resp = requests.post(url, headers=headers, json=payload, timeout=10)
+        return resp.json()
+    except Exception as e:
+        logger.error(f"Error sending email via Instantly: {e}")
+        return {"error": str(e)}
+
+def calculate_lead_score(job: Dict[str, Any], job_count: int, contact_title: str) -> float:
+    """Calculate a score for how valuable this lead is"""
+    score = 0.0
+    
+    # Title-based scoring
+    title = job.get("title", "").lower()
+    if "senior" in title:
+        score += 2.0
+    if "lead" in title:
+        score += 1.5
+    if "manager" in title:
+        score += 1.0
+    
+    # Company size scoring
+    if job_count > 10:
+        score += 2.0
+    elif job_count > 5:
+        score += 1.0
+    
+    # Contact title scoring
+    contact_lower = contact_title.lower()
+    if any(rank in contact_lower for rank in ["cto", "chief", "vp"]):
+        score += 3.0
+    elif "director" in contact_lower:
+        score += 2.0
+    elif "manager" in contact_lower:
+        score += 1.0
+    
+    # Description keyword scoring
+    description = job.get("description", "").lower()
+    valuable_keywords = ["b2b", "enterprise", "saas", "startup", "funded", "series"]
+    for keyword in valuable_keywords:
+        if keyword in description:
+            score += 0.5
+    
+    return score
+
+def is_worth_outreach(job: Dict[str, Any], job_count: int) -> bool:
+    """Determine if a job posting is worth pursuing"""
+    title_score = 1 if "senior" in job.get("title", "").lower() else 0
+    size_score = 1 if job_count > 5 else 0
+    keyword_score = 1 if any(kw in job.get("description", "").lower() for kw in ["b2b", "enterprise", "saas"]) else 0
+    lead_score = title_score + size_score + keyword_score
+    return lead_score >= 2
+
+# ========================== ENDPOINTS ===========================
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {
+        "message": "MCP: Master Control Program is running",
+        "version": "1.0.0",
+        "status": "active"
+    }
+
+@app.post("/hunt", response_model=HuntResponse)
+async def hunt_contracts(query: RecruiterQuery):
+    """Main endpoint for hunting contracts and generating leads"""
+    try:
+        logger.info(f"Starting hunt with query: {query.query}")
+        
+        # Parse the query using AI (if available) or simple parsing
+        if has_real_api_keys() and not DEMO_MODE:
+            parsed = parse_query_with_ai(query.query)
+        else:
+            # Simple parsing for demo mode or when AI is not available
+            parsed = {
+                "search_term": query.query.replace("find", "").replace("me", "").strip(),
+                "location": "",
+                "site_name": "linkedin, indeed, zip_recruiter",
+                "job_type": "full-time",
+                "results_wanted": 200,
+                "enforce_annual_salary": True,
+                "hours_old": 24,
+                "keywords": []
+            }
+        
+        logger.info(f"Parsed query: {parsed}")
+        
+        # Determine mode based on available resources
+        has_jobspy = True  # JobSpy is always available
+        has_ai = has_real_api_keys() and not DEMO_MODE
+        has_linkedin_api = has_real_api_keys() and not DEMO_MODE
+        
+        logger.info(f"Mode: Demo={DEMO_MODE}, AI={has_ai}, LinkedIn={has_linkedin_api}")
+        
+        # Handle job scraping
+        if DEMO_MODE:
+            logger.info("Running in demo mode with mock data")
+            job_results = pd.DataFrame(DEMO_JOBS)
+        else:
+            # Use JobSpy for real job scraping
+            try:
+                logger.info("Using JobSpy for job scraping")
+                
+                # Parse site names properly
+                site_names = parsed["site_name"].split(",")
+                site_names = [site.strip() for site in site_names]
+                
+                # Map site names to JobSpy format and prioritize based on reliability
+                site_mapping = {
+                    "linkedin": "linkedin",
+                    "indeed": "indeed", 
+                    "zip_recruiter": "zip_recruiter",
+                    "glassdoor": "glassdoor",
+                    "google": "google"
+                }
+                
+                # Prioritize Indeed (best scraper) and LinkedIn, avoid ZipRecruiter due to rate limiting
+                jobspy_sites = []
+                for site in site_names:
+                    if site in site_mapping:
+                        if site == "zip_recruiter":
+                            logger.info("Skipping ZipRecruiter due to rate limiting issues")
+                            continue
+                        jobspy_sites.append(site_mapping[site])
+                
+                if not jobspy_sites:
+                    jobspy_sites = ["indeed", "linkedin"]  # Default to most reliable sources
+                
+                logger.info(f"Using JobSpy sites: {jobspy_sites}")
+                
+                # Build JobSpy parameters based on documentation
+                jobspy_params = {
+                    "site_name": jobspy_sites,
+                    "search_term": parsed["search_term"],
+                    "results_wanted": min(parsed.get("results_wanted", 50), 100),  # Cap at 100 per site
+                    "enforce_annual_salary": parsed.get("enforce_annual_salary", query.enforce_annual_salary),
+                    "verbose": 1  # Reduce verbosity
+                }
+                
+                # Add location if provided
+                if parsed["location"]:
+                    jobspy_params["location"] = parsed["location"]
+                
+                # Add hours_old if specified (but be careful with Indeed limitations)
+                if parsed.get("hours_old", query.hours_old) and parsed.get("hours_old", query.hours_old) > 0:
+                    jobspy_params["hours_old"] = parsed.get("hours_old", query.hours_old)
+                
+                # Add country for Indeed searches
+                if "indeed" in jobspy_sites:
+                    jobspy_params["country_indeed"] = "USA"
+                
+                logger.info(f"JobSpy parameters: {jobspy_params}")
+                
+                job_results = scrape_jobs(**jobspy_params)
+                logger.info(f"JobSpy found {len(job_results)} jobs")
+                
+                # Log some sample jobs for verification
+                if len(job_results) > 0:
+                    sample_jobs = job_results.head(3)
+                    logger.info("Sample jobs found:")
+                    for _, job in sample_jobs.iterrows():
+                        logger.info(f"  - {job.get('title', 'N/A')} at {job.get('company', 'N/A')}")
+                
+            except Exception as e:
+                logger.error(f"Error scraping jobs with JobSpy: {e}")
+                logger.info("Falling back to demo data")
+                job_results = pd.DataFrame(DEMO_JOBS)
+        
+        logger.info(f"Found {len(job_results)} jobs")
+        
+        leads = []
+        total_processed = 0
+        
+        for _, job in job_results.iterrows():
+            if len(leads) >= query.max_leads:
+                break
+                
+            total_processed += 1
+            
+            # Check for duplicates
+            fingerprint = job_fingerprint(job)
+            if fingerprint in memory_log["job_fingerprints"]:
+                continue
+            
+            company = job.get("company")
+            
+            # Handle contact discovery based on available APIs
+            if DEMO_MODE:
+                job_count = 10  # Mock company size
+                contacts = DEMO_CONTACTS
+                ta_team_present = True
+            elif has_linkedin_api:
+                # Use real LinkedIn API
+                job_count = get_company_job_count(company)
+                keywords = extract_keywords(job.get("description", "")) if has_ai else []
+                contacts, ta_team_present = get_contacts_from_rapidapi(company, parsed['search_term'], keywords)
+            else:
+                # JobSpy-only mode - generate realistic contacts based on real company data
+                job_count = 5  # Assume smaller companies
+                
+                # Create realistic contacts based on the company and job data
+                company_name = job.get("company", "Unknown Company")
+                job_title = job.get("title", "").lower()
+                
+                # Generate appropriate contacts based on job type
+                if any(word in job_title for word in ["engineer", "developer", "software", "tech"]):
+                    contacts = [
+                        {
+                            "full_name": f"Engineering Manager at {company_name}",
+                            "title": "Engineering Manager",
+                            "url": f"https://linkedin.com/company/{company_name.lower().replace(' ', '').replace(',', '')}"
+                        },
+                        {
+                            "full_name": f"CTO at {company_name}",
+                            "title": "CTO",
+                            "url": f"https://linkedin.com/company/{company_name.lower().replace(' ', '').replace(',', '')}"
+                        }
+                    ]
+                elif any(word in job_title for word in ["sales", "business", "account"]):
+                    contacts = [
+                        {
+                            "full_name": f"Sales Director at {company_name}",
+                            "title": "Sales Director",
+                            "url": f"https://linkedin.com/company/{company_name.lower().replace(' ', '').replace(',', '')}"
+                        },
+                        {
+                            "full_name": f"VP of Sales at {company_name}",
+                            "title": "VP of Sales",
+                            "url": f"https://linkedin.com/company/{company_name.lower().replace(' ', '').replace(',', '')}"
+                        }
+                    ]
+                elif any(word in job_title for word in ["product", "manager", "pm"]):
+                    contacts = [
+                        {
+                            "full_name": f"Product Manager at {company_name}",
+                            "title": "Product Manager",
+                            "url": f"https://linkedin.com/company/{company_name.lower().replace(' ', '').replace(',', '')}"
+                        },
+                        {
+                            "full_name": f"Head of Product at {company_name}",
+                            "title": "Head of Product",
+                            "url": f"https://linkedin.com/company/{company_name.lower().replace(' ', '').replace(',', '')}"
+                        }
+                    ]
+                else:
+                    # Default contacts for other job types
+                    contacts = [
+                        {
+                            "full_name": f"Hiring Manager at {company_name}",
+                            "title": "Hiring Manager",
+                            "url": f"https://linkedin.com/company/{company_name.lower().replace(' ', '').replace(',', '')}"
+                        },
+                        {
+                            "full_name": f"HR Manager at {company_name}",
+                            "title": "HR Manager",
+                            "url": f"https://linkedin.com/company/{company_name.lower().replace(' ', '').replace(',', '')}"
+                        }
+                    ]
+                
+                ta_team_present = False
+            
+            # Filter out low-value opportunities
+            if not is_worth_outreach(job, job_count):
+                continue
+            
+            if not ta_team_present:
+                logger.info(f"{company} has no TA team — prioritizing outreach.")
+            
+            for person in contacts:
+                if len(leads) >= query.max_leads:
+                    break
+                    
+                # Handle email generation based on available APIs
+                if DEMO_MODE:
+                    email = f"{person.get('full_name', '').lower().replace(' ', '.')}@{company.lower().replace(' ', '')}.com"
+                elif has_linkedin_api:
+                    # Use real email finding
+                    linkedin_url = person.get("url", "")
+                    if "linkedin.com" in linkedin_url:
+                        domain = linkedin_url.split("/")[2]
+                    else:
+                        domain = f"{company.lower().replace(' ', '')}.com"
+                    
+                    email = find_email_by_title_and_domain(person.get("title", ""), domain)
+                    if not email:
+                        continue
+                else:
+                    # JobSpy-only mode - generate mock email
+                    email = f"hiring@{company.lower().replace(' ', '')}.com"
+                
+                # Calculate lead score
+                lead_score = calculate_lead_score(job, job_count, person.get("title", ""))
+                
+                # Generate outreach message
+                if has_ai:
+                    outreach = generate_outreach(
+                        parsed['search_term'], 
+                        company, 
+                        person.get("title", ""),
+                        job.get('job_url', '')
+                    )
+                else:
+                    # Simple outreach message without AI
+                    outreach = f"Hi, I noticed you have an open {parsed['search_term']} position at {company}. Would you be interested in discussing potential candidates for this role?"
+                
+                # Send email if auto_send is enabled (skip in demo mode)
+                if query.auto_send_emails and not DEMO_MODE and has_real_api_keys():
+                    subject = f"Hiring Help for {parsed['search_term']}?"
+                    send_result = send_email_via_instantly(email, subject, outreach)
+                    logger.info(f"Email sent to {email}: {send_result}")
+                
+                # Update memory
+                memory_log['contacted_emails'].add(email)
+                memory_log['job_urls'].add(job['job_url'])
+                memory_log["job_fingerprints"].add(fingerprint)
+                
+                # Record conversion
+                memory_log['conversions'].append({
+                    "job_title": parsed['search_term'],
+                    "contact_title": person.get("title"),
+                    "email": email,
+                    "job_url": job['job_url'],
+                    "timestamp": datetime.now().isoformat(),
+                    "score": lead_score
+                })
+                
+                # Add to leads
+                leads.append(LeadResponse(
+                    name=person.get("full_name", ""),
+                    title=person.get("title"),
+                    company=company,
+                    email=email,
+                    message=outreach,
+                    job_url=job['job_url'],
+                    score=lead_score
+                ))
+        
+        # Update hunt time
+        memory_log['last_hunt_time'] = datetime.now().isoformat()
+        
+        success_rate = len(leads) / max(total_processed, 1) * 100
+        
+        logger.info(f"Hunt completed: {len(leads)} leads found, {total_processed} jobs processed")
+        
+        return HuntResponse(
+            leads=leads,
+            jobs_found=len(job_results),
+            total_processed=total_processed,
+            success_rate=success_rate
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in hunt_contracts: {e}")
+        raise HTTPException(status_code=500, detail=f"Hunt failed: {str(e)}")
+
+@app.get("/stats")
+async def get_stats():
+    """Get system statistics"""
+    return {
+        "contacted_emails": len(memory_log['contacted_emails']),
+        "job_urls": len(memory_log['job_urls']),
+        "job_fingerprints": len(memory_log['job_fingerprints']),
+        "conversions": len(memory_log['conversions']),
+        "last_hunt_time": memory_log['last_hunt_time']
+    }
+
+@app.get("/conversions")
+async def get_conversions():
+    """Get recent conversions"""
+    return {
+        "conversions": memory_log['conversions'][-50:]  # Last 50 conversions
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000) 
