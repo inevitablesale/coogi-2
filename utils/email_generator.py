@@ -9,88 +9,23 @@ logger = logging.getLogger(__name__)
 class EmailGenerator:
     def __init__(self):
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if os.getenv("OPENAI_API_KEY") else None
-        self.ai_demo_mode = not bool(os.getenv("OPENAI_API_KEY"))
-        
-        # Demo message templates
-        self.demo_templates = {
-            "professional": """Hi {contact_name},
-
-I hope this message finds you well. I noticed that {company} has an open position for {job_title}, and I wanted to reach out regarding potential candidates who might be an excellent fit for this role.
-
-I specialize in connecting talented professionals with innovative companies like yours, and I have several qualified candidates who have expressed interest in opportunities similar to this one.
-
-Would you be open to a brief conversation about your hiring needs for this position? I'd be happy to share profiles of candidates who align with your requirements.
-
-Best regards,
-[Your Name]
-
-Job Reference: {job_url}""",
-            
-            "friendly": """Hello {contact_name}!
-
-I came across the {job_title} opening at {company} and thought it might be worth connecting. I work with some fantastic professionals who could be great fits for this type of role.
-
-Would you be interested in learning more about candidates I'm working with? I'd love to help fill this position with someone who can really make an impact at {company}.
-
-Looking forward to hearing from you!
-
-Best,
-[Your Name]
-
-P.S. Here's the job posting I'm referencing: {job_url}""",
-            
-            "direct": """Hello {contact_name},
-
-I'm reaching out about the {job_title} position at {company}. I have qualified candidates who are actively looking for this type of role and could be excellent fits for your team.
-
-Are you the right person to discuss this opportunity, or could you direct me to someone who handles hiring for this position?
-
-Thank you for your time.
-
-Best regards,
-[Your Name]
-
-Reference: {job_url}""",
-            
-            "casual": """Hi {contact_name},
-
-Saw the {job_title} posting at {company} - looks like an exciting opportunity! I work with some great people who might be perfect for this role.
-
-Worth a quick chat to see if there's a match? Happy to share some profiles if you're interested.
-
-Cheers,
-[Your Name]
-
-Job link: {job_url}"""
-        }
+        if not self.openai_client:
+            logger.warning("🚫 OpenAI API key not found - message generation unavailable")
     
     def generate_outreach(self, job_title: str, company: str, contact_title: str, job_url: str, 
                          tone: str = "professional", additional_context: str = "") -> str:
-        """Generate personalized outreach message using OpenAI or templates"""
-        if self.ai_demo_mode or not self.openai_client:
-            return self._generate_demo_message(job_title, company, contact_title, job_url, tone)
+        """Generate personalized outreach message using OpenAI only"""
+        if not self.openai_client:
+            logger.error(f"🚫 MESSAGE GENERATION UNAVAILABLE: OpenAI API key required for {job_title} at {company}")
+            return ""
         
         try:
             return self._generate_ai_message(job_title, company, contact_title, job_url, tone, additional_context)
         except Exception as e:
             logger.error(f"Error generating AI message: {e}")
-            return self._generate_demo_message(job_title, company, contact_title, job_url, tone)
+            return ""
     
-    def _generate_demo_message(self, job_title: str, company: str, contact_title: str, 
-                              job_url: str, tone: str = "professional") -> str:
-        """Generate message using demo templates"""
-        template = self.demo_templates.get(tone, self.demo_templates["professional"])
-        
-        # Extract contact name from title (simplified)
-        contact_name = "there"  # Default greeting
-        
-        return template.format(
-            contact_name=contact_name,
-            job_title=job_title,
-            company=company,
-            contact_title=contact_title,
-            job_url=job_url
-        )
+
     
     def _generate_ai_message(self, job_title: str, company: str, contact_title: str, 
                             job_url: str, tone: str, additional_context: str) -> str:

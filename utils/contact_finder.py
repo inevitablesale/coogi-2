@@ -10,46 +10,10 @@ class ContactFinder:
     def __init__(self):
         self.rapidapi_key = os.getenv("RAPIDAPI_KEY", "9fc749430dmsh203a8a9d7a08955p1eec7djsnb30f69ff59c7")
         self.hunter_api_key = os.getenv("HUNTER_API_KEY")
-        # Use real APIs until Hunter.io - only demo mode for email discovery
-        self.demo_mode = False
-        self.email_demo_mode = not bool(self.hunter_api_key)
-        
-        # Demo contacts for testing
-        self.demo_contacts = {
-            "TechCorp Inc": [
-                {"full_name": "John Smith", "title": "VP of Engineering", "url": "https://linkedin.com/in/johnsmith"},
-                {"full_name": "Lisa Chen", "title": "Head of Talent Acquisition", "url": "https://linkedin.com/in/lisachen"}
-            ],
-            "StartupXYZ": [
-                {"full_name": "Sarah Johnson", "title": "Head of People", "url": "https://linkedin.com/in/sarahjohnson"},
-                {"full_name": "Mike Rodriguez", "title": "CTO", "url": "https://linkedin.com/in/mikerodriguez"}
-            ],
-            "Enterprise Solutions": [
-                {"full_name": "Mike Davis", "title": "Chief Technology Officer", "url": "https://linkedin.com/in/mikedavis"},
-                {"full_name": "Jennifer Brown", "title": "Director of Recruiting", "url": "https://linkedin.com/in/jenniferbrown"}
-            ],
-            "GrowthCo": [
-                {"full_name": "Alex Wilson", "title": "VP of Marketing", "url": "https://linkedin.com/in/alexwilson"},
-                {"full_name": "Emma Thompson", "title": "People Operations Manager", "url": "https://linkedin.com/in/emmathompson"}
-            ],
-            "CloudTech": [
-                {"full_name": "David Kim", "title": "Engineering Manager", "url": "https://linkedin.com/in/davidkim"},
-                {"full_name": "Rachel Green", "title": "Head of Talent", "url": "https://linkedin.com/in/rachelgreen"}
-            ]
-        }
-        
-        self.demo_emails = {
-            "john.smith": "john.smith@techcorp.com",
-            "lisa.chen": "lisa.chen@techcorp.com",
-            "sarah.johnson": "sarah.johnson@startupxyz.com",
-            "mike.rodriguez": "mike.rodriguez@startupxyz.com",
-            "mike.davis": "mike.davis@enterprisesolutions.com",
-            "jennifer.brown": "jennifer.brown@enterprisesolutions.com",
-            "alex.wilson": "alex.wilson@growthco.com",
-            "emma.thompson": "emma.thompson@growthco.com",
-            "david.kim": "david.kim@cloudtech.com",
-            "rachel.green": "rachel.green@cloudtech.com"
-        }
+        if not self.hunter_api_key:
+            logger.warning("🚫 Hunter.io API key not found - email discovery unavailable")
+        if not self.rapidapi_key:
+            logger.warning("🚫 RapidAPI key not found - contact discovery unavailable")
         
         # Title ranking for contact prioritization
         self.title_rank = {
@@ -73,28 +37,10 @@ class ContactFinder:
                 
         except Exception as e:
             logger.error(f"Error finding contacts for {company}: {e}")
-            # Only fall back to demo data if RapidAPI fails
-            return self._get_demo_contacts(company, role_hint, keywords)
+            logger.error(f"RapidAPI unavailable for {company} - no fallback data")
+            return [], False
     
-    def _get_demo_contacts(self, company: str, role_hint: str, keywords: List[str]) -> Tuple[List[Dict[str, Any]], bool]:
-        """Get demo contacts for testing"""
-        contacts = self.demo_contacts.get(company, [])
-        
-        # Rank contacts based on relevance
-        ranked_contacts = []
-        for contact in contacts:
-            score = self._calculate_contact_score(contact, role_hint, keywords)
-            ranked_contacts.append((score, contact))
-        
-        # Sort by score and return top contacts
-        ranked_contacts.sort(reverse=True, key=lambda x: x[0])
-        final_contacts = [contact for _, contact in ranked_contacts]
-        
-        # Check if has talent acquisition team
-        has_ta_team = any("talent" in contact["title"].lower() or "recruiting" in contact["title"].lower() 
-                         for contact in contacts)
-        
-        return final_contacts, has_ta_team
+
     
     def _get_contacts_from_rapidapi(self, company: str, role_hint: str, keywords: List[str]) -> Tuple[List[Dict[str, Any]], bool]:
         """Get company contacts from RapidAPI SaleLeads LinkedIn scraper"""
@@ -113,8 +59,8 @@ class ContactFinder:
             
             if people_resp.status_code != 200:
                 logger.warning(f"SaleLeads API failed with status {people_resp.status_code}: {people_resp.text[:200]}")
-                logger.info(f"SaleLeads API unavailable, using demo contacts for {company}")
-                return self._get_demo_contacts(company, role_hint, keywords)
+                logger.error(f"SaleLeads API unavailable for {company} - no contact data available")
+                return [], False
                 
             people_data = people_resp.json()
             
@@ -191,8 +137,8 @@ class ContactFinder:
             
         except Exception as e:
             logger.error(f"SaleLeads API error for {company}: {e}")
-            logger.info(f"Falling back to demo data for {company}")
-            return self._get_demo_contacts(company, role_hint, keywords)
+            logger.error(f"No contact data available for {company} - no fallback data")
+            return [], False
     
     def _calculate_contact_score(self, contact: Dict[str, Any], role_hint: str, keywords: List[str]) -> float:
         """Calculate relevance score for a contact"""
@@ -236,20 +182,18 @@ class ContactFinder:
             return False
     
     def find_email(self, title: str, company: str) -> Optional[str]:
-        """Find email address using Hunter.io API or demo data"""
-        if self.email_demo_mode:
-            return self._get_demo_email(title, company)
+        """Find email address using Hunter.io API only"""
+        if not self.hunter_api_key:
+            logger.warning(f"🚫 EMAIL DISCOVERY UNAVAILABLE: Hunter.io API key required for {title} at {company}")
+            return None
         
         try:
             return self._find_email_with_hunter(title, company)
         except Exception as e:
             logger.error(f"Error finding email for {title} at {company}: {e}")
-            return self._get_demo_email(title, company)
+            return None
     
-    def _get_demo_email(self, title: str, company: str) -> Optional[str]:
-        """DEMO MODE - Return None to avoid fake data"""
-        logger.warning(f"🚫 EMAIL DISCOVERY UNAVAILABLE: Hunter.io API key required for {title} at {company}")
-        return None  # Return None instead of fake emails
+
     
     def _find_email_with_hunter(self, title: str, company: str) -> Optional[str]:
         """Find email address using Hunter.io API"""

@@ -12,62 +12,15 @@ logger = logging.getLogger(__name__)
 class JobScraper:
     def __init__(self):
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if os.getenv("OPENAI_API_KEY") else None
-        self.ai_demo_mode = not bool(os.getenv("OPENAI_API_KEY"))
         self.jobspy_api_url = "https://coogi-jobspy-production.up.railway.app/jobs"
         
-        # Demo jobs for testing
-        self.demo_jobs = [
-            {
-                "title": "Senior Software Engineer",
-                "company": "TechCorp Inc",
-                "location": "San Francisco, CA",
-                "description": "We are looking for a senior software engineer with experience in Python, React, and AWS. B2B SaaS experience preferred. Strong problem-solving skills and ability to work in a fast-paced environment.",
-                "job_url": "https://linkedin.com/jobs/demo1",
-                "salary": "$120,000 - $180,000",
-                "date_posted": "2025-07-29"
-            },
-            {
-                "title": "Product Manager",
-                "company": "StartupXYZ",
-                "location": "New York, NY", 
-                "description": "Join our growing team as a Product Manager. Experience with enterprise software and B2B sales required. You'll be responsible for product strategy and roadmap planning.",
-                "job_url": "https://linkedin.com/jobs/demo2",
-                "salary": "$100,000 - $150,000",
-                "date_posted": "2025-07-28"
-            },
-            {
-                "title": "Sales Director",
-                "company": "Enterprise Solutions",
-                "location": "Austin, TX",
-                "description": "Lead our sales team in the enterprise space. Experience with SaaS and B2B sales required. Proven track record of meeting revenue targets and building high-performing teams.",
-                "job_url": "https://linkedin.com/jobs/demo3",
-                "salary": "$130,000 - $200,000",
-                "date_posted": "2025-07-27"
-            },
-            {
-                "title": "Marketing Manager",
-                "company": "GrowthCo",
-                "location": "Remote",
-                "description": "Looking for a creative marketing manager to drive our digital marketing efforts. Experience with content marketing, SEO, and marketing automation required.",
-                "job_url": "https://linkedin.com/jobs/demo4",
-                "salary": "$80,000 - $120,000",
-                "date_posted": "2025-07-26"
-            },
-            {
-                "title": "DevOps Engineer",
-                "company": "CloudTech",
-                "location": "Seattle, WA",
-                "description": "Join our infrastructure team as a DevOps Engineer. Experience with AWS, Docker, Kubernetes, and CI/CD pipelines required. Help us scale our platform to millions of users.",
-                "job_url": "https://linkedin.com/jobs/demo5",
-                "salary": "$110,000 - $160,000",
-                "date_posted": "2025-07-25"
-            }
-        ]
+        if not self.openai_client:
+            logger.warning("🚫 OpenAI API key not found - AI query parsing unavailable")
     
     def parse_query(self, query: str) -> Dict[str, Any]:
         """Parse recruiter query using AI to extract search parameters"""
-        if self.ai_demo_mode or not self.openai_client:
-            # Fallback parsing when OpenAI not available
+        if not self.openai_client:
+            # Basic parsing when OpenAI not available
             return self._fallback_parse_query(query)
         
         system_prompt = """
@@ -195,8 +148,8 @@ class JobScraper:
                 elif isinstance(response_data, list):
                     jobs_list = response_data
                 else:
-                    logger.warning("Unexpected API response format")
-                    return self._get_demo_jobs_filtered(search_params, max_results)
+                    logger.error("Unexpected API response format - no fallback data available")
+                    return []
                 
                 if jobs_list and len(jobs_list) > 0:
                     # Convert API response to our expected format
@@ -219,15 +172,15 @@ class JobScraper:
                     logger.info(f"Successfully retrieved {len(formatted_jobs)} jobs from JobSpy API")
                     return formatted_jobs
                 else:
-                    logger.warning("No jobs found from JobSpy API, falling back to demo data")
-                    return self._get_demo_jobs_filtered(search_params, max_results)
+                    logger.error("No jobs found from JobSpy API - no fallback data available")
+                    return []
             else:
                 logger.error(f"JobSpy API returned status {response.status_code}: {response.text}")
-                return self._get_demo_jobs_filtered(search_params, max_results)
+                return []
                 
         except Exception as e:
             logger.error(f"Error calling JobSpy API: {e}")
-            return self._get_demo_jobs_filtered(search_params, max_results)
+            return []
     
     def _format_salary(self, job: Dict[str, Any]) -> str:
         """Format salary information from job data"""
@@ -263,25 +216,14 @@ class JobScraper:
         else:
             return ""
     
-    def _get_demo_jobs_filtered(self, search_params: Dict[str, Any], max_results: int) -> List[Dict[str, Any]]:
-        """Get filtered demo jobs"""
-        search_term = search_params.get("search_term", "").lower()
-        filtered_jobs = []
-        
-        for job in self.demo_jobs:
-            if (not search_term or 
-                search_term in job["title"].lower() or 
-                search_term in job["description"].lower()):
-                filtered_jobs.append(job)
-        
-        return filtered_jobs[:max_results]
+
     
     def extract_keywords(self, text: str) -> List[str]:
         """Extract relevant keywords from job description"""
         if not text:
             return []
             
-        if self.ai_demo_mode or not self.openai_client:
+        if not self.openai_client:
             # Fallback keyword extraction when OpenAI not available
             return self._fallback_extract_keywords(text)
         
