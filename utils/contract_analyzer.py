@@ -161,7 +161,7 @@ class ContractAnalyzer:
             growth_score += self._count_keywords(job_text, self.growth_keywords)
             
             # Seniority scoring
-            title_lower = job.get('title', '').lower()
+            title_lower = (job.get('title') or '').lower()
             for level, multiplier in self.seniority_multipliers.items():
                 if level in title_lower:
                     seniority_score += multiplier
@@ -234,7 +234,7 @@ class ContractAnalyzer:
 
     def _estimate_salary_from_title(self, title: str) -> int:
         """Rough salary estimation based on job title"""
-        title_lower = title.lower()
+        title_lower = (title or '').lower()
         
         # Base estimates by role type
         base_estimates = {
@@ -262,7 +262,7 @@ class ContractAnalyzer:
 
     def _extract_department(self, title: str) -> Optional[str]:
         """Extract department from job title"""
-        title_lower = title.lower()
+        title_lower = (title or '').lower()
         
         departments = {
             'engineering': ['engineer', 'developer', 'software', 'backend', 'frontend', 'fullstack'],
@@ -283,7 +283,7 @@ class ContractAnalyzer:
 
     def _extract_role_type(self, title: str) -> Optional[str]:
         """Extract specific role type from title"""
-        title_lower = title.lower()
+        title_lower = (title or '').lower()
         
         if 'frontend' in title_lower or 'front-end' in title_lower:
             return 'Frontend Engineer'

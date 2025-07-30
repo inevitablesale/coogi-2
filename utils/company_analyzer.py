@@ -4,6 +4,7 @@ import time
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +34,22 @@ class CompanyAnalyzer:
         self.min_delay = 2.0  # 2 seconds minimum between API calls
         self.api_calls_made = 0
         
+        # Import contact finder for enhanced TA team detection
+        from utils.contact_finder import ContactFinder
+        self.contact_finder = ContactFinder()
+        
     def analyze_company(self, company: str, people_data: List[Dict[str, Any]]) -> CompanyAnalysis:
         """Comprehensive company analysis for recruiting opportunity assessment"""
         
-        # Check for talent acquisition team
-        has_ta_team, ta_roles = self._detect_talent_acquisition_team(people_data)
+        # Use enhanced contact finder for two-tier TA team detection
+        contacts, has_ta_team = self.contact_finder.find_contacts(
+            company=company,
+            role_hint="",  # We'll analyze all roles
+            keywords=[]    # We'll analyze all people
+        )
+        
+        # Extract TA roles from people data for reporting
+        ta_roles = self._extract_ta_roles(people_data)
         
         # Get company jobs data if no TA team
         job_count = 0
@@ -76,8 +88,8 @@ class CompanyAnalyzer:
             skip_reason=skip_reason
         )
     
-    def _detect_talent_acquisition_team(self, people: List[Dict[str, Any]]) -> tuple[bool, List[str]]:
-        """Detect talent acquisition team and return roles"""
+    def _extract_ta_roles(self, people: List[Dict[str, Any]]) -> List[str]:
+        """Extract TA roles from people data for reporting"""
         ta_keywords = [
             "talent", "recruiter", "recruiting", "people ops", "hr", 
             "human resources", "people partner", "talent acquisition", 
@@ -91,8 +103,7 @@ class CompanyAnalyzer:
                 if keyword in title:
                     ta_roles_found.append(person.get("title", ""))
         
-        unique_ta_roles = list(set(ta_roles_found))
-        return len(unique_ta_roles) > 0, unique_ta_roles
+        return list(set(ta_roles_found))
     
     def _rate_limit_api_call(self):
         """Ensure we respect RapidAPI rate limits"""

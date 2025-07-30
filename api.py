@@ -19,10 +19,59 @@ from utils.contract_analyzer import ContractAnalyzer
 import requests  # Add missing import for company analysis API calls
 import time  # Add time import for rate limiting
 import json
+import asyncio
+import httpx
+
+# Supabase setup (optional - will work without it)
+try:
+    from supabase import create_client, Client
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_ANON_KEY")
+    
+    if supabase_url and supabase_key:
+        supabase: Client = create_client(supabase_url, supabase_key)
+        logger.info("✅ Supabase client initialized")
+    else:
+        supabase = None
+        logger.warning("⚠️  Supabase credentials not found - database operations disabled")
+        
+except ImportError:
+    supabase = None
+    logger.warning("⚠️  Supabase library not installed - database operations disabled")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Rate Limiter for RapidAPI (20 requests per minute)
+class RateLimiter:
+    def __init__(self, max_requests=20, time_window=60):
+        self.max_requests = max_requests
+        self.time_window = time_window
+        self.requests = []
+    
+    def can_make_request(self):
+        """Check if we can make a request without hitting rate limit"""
+        now = time.time()
+        # Remove requests older than time_window
+        self.requests = [req_time for req_time in self.requests if now - req_time < self.time_window]
+        return len(self.requests) < self.max_requests
+    
+    def record_request(self):
+        """Record that a request was made"""
+        self.requests.append(time.time())
+    
+    def wait_if_needed(self):
+        """Wait if we're at the rate limit"""
+        if not self.can_make_request():
+            wait_time = self.time_window - (time.time() - self.requests[0])
+            if wait_time > 0:
+                logger.info(f"Rate limit reached. Waiting {wait_time:.1f} seconds...")
+                time.sleep(wait_time)
+        self.record_request()
+
+# Initialize rate limiter
+rate_limiter = RateLimiter(max_requests=20, time_window=60)
 
 app = FastAPI(
     title="MCP: Master Control Program API",
@@ -41,7 +90,6 @@ contract_analyzer = ContractAnalyzer()
 # Request/Response Models
 class JobSearchRequest(BaseModel):
     query: str
-    max_leads: int = 10
     hours_old: int = 24
     enforce_salary: bool = True
     auto_generate_messages: bool = False
@@ -58,7 +106,7 @@ class Lead(BaseModel):
     timestamp: str
 
 class JobSearchResponse(BaseModel):
-    leads: List[Lead]
+    companies_analyzed: List[Dict[str, Any]]
     jobs_found: int
     total_processed: int
     search_query: str
@@ -144,6 +192,25 @@ class CompanyJobsResponse(BaseModel):
     jobs: List[Dict[str, Any]]
     timestamp: str
 
+# Add webhook models for production architecture
+class WebhookResult(BaseModel):
+    company: str
+    job_title: str
+    job_url: str
+    has_ta_team: bool
+    contacts_found: int
+    top_contacts: List[Dict[str, Any]]
+    recommendation: str
+    hunter_emails: List[str] = []
+    instantly_campaign_id: Optional[str] = None
+    timestamp: str
+
+class WebhookRequest(BaseModel):
+    batch_id: str
+    results: List[WebhookResult]
+    summary: Dict[str, Any]
+    timestamp: str
+
 # API Endpoints
 @app.get("/", response_model=HealthResponse)
 async def health_check():
@@ -168,76 +235,77 @@ async def health_check():
 
 @app.post("/search-jobs", response_model=JobSearchResponse)
 async def search_jobs(request: JobSearchRequest):
-    """Search for jobs and generate leads"""
+    """Search for jobs and analyze companies for recruiting opportunities"""
     try:
         # Parse query
         search_params = job_scraper.parse_query(request.query)
         
-        # Search jobs
-        jobs = job_scraper.search_jobs(search_params, max_results=request.max_leads * 5)
+        # Search jobs - get all available jobs
+        jobs = job_scraper.search_jobs(search_params, max_results=50)
         
         if not jobs:
             raise HTTPException(status_code=404, detail="No jobs found matching criteria")
         
-        leads = []
+        companies_analyzed = []
         processed_count = 0
         
-        for job in jobs[:request.max_leads]:
-            processed_count += 1
+        # Rate limiting: Process jobs in batches to respect 20 req/min limit
+        # Each job requires ~3-4 RapidAPI calls, so process max 5 jobs per batch
+        max_jobs_per_batch = 5
+        total_jobs = len(jobs)
+        
+        logger.info(f"Processing {total_jobs} jobs in batches of {max_jobs_per_batch}")
+        
+        # Process jobs in batches
+        for batch_start in range(0, total_jobs, max_jobs_per_batch):
+            batch_end = min(batch_start + max_jobs_per_batch, total_jobs)
+            batch_jobs = jobs[batch_start:batch_end]
             
-            # Check if already processed
-            job_fingerprint = memory_manager.create_job_fingerprint(job)
-            if memory_manager.is_job_processed(job_fingerprint):
-                continue
+            logger.info(f"Processing batch {batch_start//max_jobs_per_batch + 1}: jobs {batch_start+1}-{batch_end}")
             
-            # Find contacts
-            description = job.get('description') or job.get('job_level') or ''
-            contacts, has_ta_team = contact_finder.find_contacts(
-                company=job.get('company', ''),
-                role_hint=job.get('title', ''),
-                keywords=job_scraper.extract_keywords(description)
-            )
-            
-            for contact in contacts[:2]:  # Top 2 contacts per job
-                # Find email
-                email = contact_finder.find_email(
-                    contact['title'], 
-                    job.get('company', '')
+            # Process jobs in current batch
+            for job in batch_jobs:
+                processed_count += 1
+                
+                # Check if already processed
+                job_fingerprint = memory_manager.create_job_fingerprint(job)
+                if memory_manager.is_job_processed(job_fingerprint):
+                    continue
+                
+                company = job.get('company', '')
+                
+                # Find contacts and analyze company
+                description = job.get('description') or job.get('job_level') or ''
+                contacts, has_ta_team = contact_finder.find_contacts(
+                    company=company,
+                    role_hint=job.get('title', ''),
+                    keywords=job_scraper.extract_keywords(description)
                 )
                 
-                if email and not memory_manager.is_email_contacted(email):
-                    # Generate outreach message if requested
-                    message = ""
-                    if request.auto_generate_messages:
-                        message = email_generator.generate_outreach(
-                            job_title=job.get('title', ''),
-                            company=job.get('company', ''),
-                            contact_title=contact['title'],
-                            job_url=job.get('job_url', '')
-                        )
-                    
-                    # Calculate lead score
-                    score = contact_finder.calculate_lead_score(contact, job, has_ta_team)
-                    
-                    lead = Lead(
-                        name=contact['full_name'],
-                        title=contact['title'],
-                        company=job.get('company', ''),
-                        email=email,
-                        job_title=job.get('title', ''),
-                        job_url=job.get('job_url', ''),
-                        message=message,
-                        score=score,
-                        timestamp=datetime.now().isoformat()
-                    )
-                    leads.append(lead)
+                # Analyze company for recruiting opportunity
+                company_analysis = {
+                    "company": company,
+                    "job_title": job.get('title', ''),
+                    "job_url": job.get('job_url', ''),
+                    "has_ta_team": has_ta_team,
+                    "contacts_found": len(contacts),
+                    "top_contacts": contacts[:3] if contacts else [],
+                    "recommendation": "TARGET" if not has_ta_team else "SKIP - Has TA team",
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                companies_analyzed.append(company_analysis)
+                
+                # Mark job as processed
+                memory_manager.mark_job_processed(job_fingerprint)
             
-            # Mark job as processed
-            job_fingerprint = memory_manager.create_job_fingerprint(job)
-            memory_manager.mark_job_processed(job_fingerprint)
+            # Wait between batches to respect rate limits
+            if batch_end < total_jobs:
+                logger.info(f"Batch complete. Waiting 60 seconds before next batch...")
+                time.sleep(60)
         
         return JobSearchResponse(
-            leads=leads,
+            companies_analyzed=companies_analyzed,
             jobs_found=len(jobs),
             total_processed=processed_count,
             search_query=request.query,
@@ -404,86 +472,91 @@ async def analyze_companies(request: CompanyAnalysisRequest):
         logger.error(f"Error in company analysis: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/search-jobs-fast")
+@app.post("/search-jobs-fast", response_model=JobSearchResponse)
 async def search_jobs_fast(request: JobSearchRequest):
     """Fast job search with immediate results - optimized for 30-second responses"""
     try:
         # Parse query quickly
         search_params = job_scraper.parse_query(request.query)
         
-        # Get fewer jobs for faster processing
-        jobs = job_scraper.search_jobs(search_params, max_results=min(request.max_leads * 2, 10))
+        # Get all available jobs
+        jobs = job_scraper.search_jobs(search_params, max_results=20)
         
         if not jobs:
             raise HTTPException(status_code=404, detail="No jobs found matching criteria")
         
-        leads = []
+        companies_analyzed = []
         processed_count = 0
-        for i, job in enumerate(jobs):
-            if processed_count >= request.max_leads:
-                break
-                
-            company = job.get('company', '')
+        
+        # Rate limiting: Process jobs in batches to respect 20 req/min limit
+        # For fast endpoint, process max 3 jobs per batch (smaller batches for faster response)
+        max_jobs_per_batch = 3
+        total_jobs = len(jobs)
+        
+        logger.info(f"Processing {total_jobs} jobs in batches of {max_jobs_per_batch}")
+        
+        # Process jobs in batches
+        for batch_start in range(0, total_jobs, max_jobs_per_batch):
+            batch_end = min(batch_start + max_jobs_per_batch, total_jobs)
+            batch_jobs = jobs[batch_start:batch_end]
             
-            # Pre-filter enterprise companies to avoid wasting API calls
-            enterprise_companies = ["google", "microsoft", "amazon", "apple", "meta", "facebook", "netflix", "tesla", "lockheed martin", "general dynamics", "boeing", "ibm", "oracle", "salesforce", "adobe", "intel", "nvidia", "uber", "airbnb", "twitter", "linkedin", "paypal", "jpmorgan", "goldman sachs", "morgan stanley"]
+            logger.info(f"Processing batch {batch_start//max_jobs_per_batch + 1}: jobs {batch_start+1}-{batch_end}")
             
-            if any(enterprise in company.lower() for enterprise in enterprise_companies):
-                logger.warning(f"⚠️  SKIP: {company} is enterprise company - guaranteed TA team")
-                continue
-            
-            # Skip processed jobs quickly
-            job_fingerprint = memory_manager.create_job_fingerprint(job)
-            if memory_manager.is_job_processed(job_fingerprint):
-                continue
+            # Process jobs in current batch
+            for job in batch_jobs:
+                company = job.get('company', '')
                 
-            processed_count += 1
-            logger.info(f"Processing job {processed_count}: {job.get('title')} at {company}")
+                # Pre-filter enterprise companies to avoid wasting API calls
+                enterprise_companies = ["google", "microsoft", "amazon", "apple", "meta", "facebook", "netflix", "tesla", "lockheed martin", "general dynamics", "boeing", "ibm", "oracle", "salesforce", "adobe", "intel", "nvidia", "uber", "airbnb", "twitter", "linkedin", "paypal", "jpmorgan", "goldman sachs", "morgan stanley"]
                 
-            # Find contacts with timeout
-            contacts, has_ta_team = contact_finder.find_contacts(company, job.get('title', ''), [])
-            
-            # Skip companies with TA teams immediately
-            if has_ta_team:
-                logger.warning(f"⚠️  SKIP: {company} has internal TA team - low conversion probability")
-                memory_manager.mark_job_processed(job_fingerprint)
-                continue
+                if company and any(enterprise in company.lower() for enterprise in enterprise_companies):
+                    logger.warning(f"⚠️  SKIP: {company} is enterprise company - guaranteed TA team")
+                    continue
                 
-            # Process only the top contact for speed - but only if we have real data
-            if contacts:
-                contact = contacts[0]
-                email = contact_finder.find_email(contact['full_name'], company)
-                
-                # Only create leads with real email addresses
-                if email and email != "contact@google.com" and "@" in email and not email.startswith("contact@"):
-                    score = contact_finder.calculate_lead_score(contact, job, has_ta_team)
+                # Skip processed jobs quickly
+                job_fingerprint = memory_manager.create_job_fingerprint(job)
+                if memory_manager.is_job_processed(job_fingerprint):
+                    continue
                     
-                    lead = {
-                        "name": contact['full_name'],
-                        "title": contact['title'],
-                        "company": company,
-                        "email": email,
-                        "job_title": job.get('title', ''),
-                        "job_url": job.get('job_url', ''),
-                        "message": "",
-                        "score": score,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    leads.append(lead)
-                else:
-                    logger.warning(f"Skipping {company}: No valid email found for {contact['full_name']}")
+                processed_count += 1
+                logger.info(f"Processing job {processed_count}: {job.get('title')} at {company}")
+                    
+                # Find contacts and analyze company
+                try:
+                    contacts, has_ta_team = contact_finder.find_contacts(company, job.get('title', ''), [])
+                except Exception as e:
+                    logger.error(f"Error in find_contacts for {company}: {e}")
+                    contacts, has_ta_team = [], False
+                
+                # Analyze company for recruiting opportunity
+                company_analysis = {
+                    "company": company,
+                    "job_title": job.get('title', ''),
+                    "job_url": job.get('job_url', ''),
+                    "has_ta_team": has_ta_team,
+                    "contacts_found": len(contacts),
+                    "top_contacts": contacts[:3] if contacts else [],
+                    "recommendation": "TARGET" if not has_ta_team else "SKIP - Has TA team",
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                companies_analyzed.append(company_analysis)
+                
+                # Mark job as processed
+                memory_manager.mark_job_processed(job_fingerprint)
             
-            memory_manager.mark_job_processed(job_fingerprint)
+            # Wait between batches to respect rate limits
+            if batch_end < total_jobs:
+                logger.info(f"Batch complete. Waiting 60 seconds before next batch...")
+                time.sleep(60)
             
-        return {
-            "leads": leads,
-            "summary": {
-                "leads_found": len(leads),
-                "jobs_processed": len(jobs[:request.max_leads]),
-                "total_jobs": len(jobs)
-            },
-            "timestamp": datetime.now().isoformat()
-        }
+        return JobSearchResponse(
+            companies_analyzed=companies_analyzed,
+            jobs_found=len(jobs),
+            total_processed=processed_count,
+            search_query=request.query,
+            timestamp=datetime.now().isoformat()
+        )
         
     except Exception as e:
         logger.error(f"Error in fast job search: {e}")
@@ -502,92 +575,126 @@ async def search_jobs_stream(request: JobSearchRequest):
             search_term = search_params.get("search_term", request.query)
             yield f"data: {json.dumps({'type': 'status', 'message': f'Searching for: {search_term}', 'timestamp': datetime.now().isoformat()})}\n\n"
             
-            # Search jobs and stream progress
-            jobs = job_scraper.search_jobs(search_params, max_results=request.max_leads * 3)
+            # Search jobs - get all available jobs, don't limit by max_leads yet
+            jobs = job_scraper.search_jobs(search_params, max_results=50)
             yield f"data: {json.dumps({'type': 'jobs_found', 'count': len(jobs), 'timestamp': datetime.now().isoformat()})}\n\n"
             
             if not jobs:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'No jobs found matching criteria', 'timestamp': datetime.now().isoformat()})}\n\n"
                 return
             
-            leads = []
+            companies_analyzed = []
             processed_count = 0
             
-            for i, job in enumerate(jobs[:request.max_leads]):
-                company = job.get('company', '')
-                company_msg = f'Analyzing company {i+1}/{min(len(jobs), request.max_leads)}: {company}'
-                yield f"data: {json.dumps({'type': 'processing', 'message': company_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+            # Rate limiting: Process jobs in batches to respect 20 req/min limit
+            # For streaming, process max 4 jobs per batch (balanced for real-time updates)
+            max_jobs_per_batch = 4
+            total_jobs = len(jobs)
+            
+            yield f"data: {json.dumps({'type': 'status', 'message': f'Processing {total_jobs} jobs in batches of {max_jobs_per_batch}', 'timestamp': datetime.now().isoformat()})}\n\n"
+            
+            # Process jobs in batches
+            for batch_start in range(0, total_jobs, max_jobs_per_batch):
+                batch_end = min(batch_start + max_jobs_per_batch, total_jobs)
+                batch_jobs = jobs[batch_start:batch_end]
                 
-                # Check if already processed
-                job_fingerprint = memory_manager.create_job_fingerprint(job)
-                if memory_manager.is_job_processed(job_fingerprint):
-                    skip_msg = f'Already processed: {company}'
-                    yield f"data: {json.dumps({'type': 'skipped', 'message': skip_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
-                    continue
+                batch_msg = f'Processing batch {batch_start//max_jobs_per_batch + 1}: jobs {batch_start+1}-{batch_end}'
+                yield f"data: {json.dumps({'type': 'status', 'message': batch_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
                 
-                # Find contacts
-                role_hint = job.get('title', '')
-                keywords = [role_hint] + search_params.get('keywords', [])
-                contacts, has_ta_team = contact_finder.find_contacts(company, role_hint, keywords)
-                
-                if has_ta_team:
-                    ta_msg = f'Skipping {company}: Has internal TA team'
-                    yield f"data: {json.dumps({'type': 'skipped', 'message': ta_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
-                    memory_manager.mark_job_processed(job_fingerprint)
-                    continue
-                
-                if not contacts:
-                    contact_msg = f'No contacts found for {company}'
-                    yield f"data: {json.dumps({'type': 'skipped', 'message': contact_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
-                    memory_manager.mark_job_processed(job_fingerprint)
-                    continue
-                
-                # Process each contact
-                for contact in contacts[:2]:  # Limit to top 2 contacts per company
-                    email = contact_finder.find_email(contact['full_name'], company)
-                    if not email:
+                # Process jobs in current batch
+                for i, job in enumerate(batch_jobs):
+                    global_job_index = batch_start + i
+                    company = job.get('company', '')
+                    company_msg = f'Analyzing company {global_job_index+1}/{total_jobs}: {company}'
+                    yield f"data: {json.dumps({'type': 'processing', 'message': company_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+                    
+                    # Check if already processed
+                    job_fingerprint = memory_manager.create_job_fingerprint(job)
+                    if memory_manager.is_job_processed(job_fingerprint):
+                        skip_msg = f'Already processed: {company}'
+                        yield f"data: {json.dumps({'type': 'skipped', 'message': skip_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
                         continue
                     
-                    # Generate message if requested
-                    message = ""
-                    if request.auto_generate_messages:
-                        message = email_generator.generate_outreach(
-                            job_title=job.get('title', ''),
-                            company=company,
-                            contact_title=contact['title'],
-                            job_url=job.get('job_url', '')
-                        )
+                    # Find contacts
+                    role_hint = job.get('title', '')
+                    keywords = [role_hint] + search_params.get('keywords', [])
+                    contacts, has_ta_team = contact_finder.find_contacts(company, role_hint, keywords)
                     
-                    # Calculate score and create lead
-                    score = contact_finder.calculate_lead_score(contact, job, has_ta_team)
+                    if has_ta_team:
+                        ta_msg = f'Skipping {company}: Has internal TA team'
+                        yield f"data: {json.dumps({'type': 'skipped', 'message': ta_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+                        memory_manager.mark_job_processed(job_fingerprint)
+                        continue
                     
-                    lead = {
-                        "name": contact['full_name'],
-                        "title": contact['title'],
-                        "company": company,
-                        "email": email,
-                        "job_title": job.get('title', ''),
-                        "job_url": job.get('job_url', ''),
-                        "message": message,
-                        "score": score,
-                        "timestamp": datetime.now().isoformat()
-                    }
+                    if not contacts:
+                        contact_msg = f'No contacts found for {company}'
+                        yield f"data: {json.dumps({'type': 'skipped', 'message': contact_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+                        memory_manager.mark_job_processed(job_fingerprint)
+                        continue
                     
-                    # Stream the lead immediately
-                    yield f"data: {json.dumps({'type': 'lead', 'data': lead, 'timestamp': datetime.now().isoformat()})}\n\n"
-                    leads.append(lead)
+                    # Process each contact
+                    for contact in contacts[:3]:  # Top 3 contacts per company
+                        # Find email via Hunter.io
+                        email = contact_finder.find_email(contact['title'], company)
+                        
+                        # Only count as lead if email is found and not already contacted
+                        if email and not memory_manager.is_email_contacted(email):
+                            # Generate message if requested
+                            message = ""
+                            if request.auto_generate_messages:
+                                message = email_generator.generate_outreach(
+                                    job_title=job.get('title', ''),
+                                    company=company,
+                                    contact_title=contact['title'],
+                                    job_url=job.get('job_url', '')
+                                )
+                            
+                            # Calculate score and create lead
+                            score = contact_finder.calculate_lead_score(contact, job, has_ta_team)
+                            
+                            lead = {
+                            "name": contact['full_name'],
+                            "title": contact['title'],
+                            "company": company,
+                            "email": email,
+                            "job_title": job.get('title', ''),
+                            "job_url": job.get('job_url', ''),
+                            "message": message,
+                            "score": score,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        
+                        # Stream the lead immediately
+                        yield f"data: {json.dumps({'type': 'lead', 'data': lead, 'timestamp': datetime.now().isoformat()})}\n\n"
+                        leads.append(lead)
+                        
+                        # Check if we've reached max_leads (apply limit after email discovery)
+                        if len(leads) >= request.max_leads:
+                            yield f"data: {json.dumps({'type': 'status', 'message': f'Reached max_leads limit ({request.max_leads}) - stopping lead generation', 'timestamp': datetime.now().isoformat()})}\n\n"
+                            break
                 
-                processed_count += 1
+                # Mark job as processed
                 memory_manager.mark_job_processed(job_fingerprint)
+                processed_count += 1
+                
+                # Stop processing jobs if we've reached max_leads
+                if len(leads) >= request.max_leads:
+                    break
             
-            # Send final summary
+            # Wait between batches to respect rate limits
+            if batch_end < total_jobs:
+                wait_msg = f'Batch complete. Waiting 60 seconds before next batch...'
+                yield f"data: {json.dumps({'type': 'status', 'message': wait_msg, 'timestamp': datetime.now().isoformat()})}\n\n"
+                time.sleep(60)
+            
+            # Send completion summary
             yield f"data: {json.dumps({'type': 'complete', 'summary': {'leads_found': len(leads), 'jobs_processed': processed_count, 'total_jobs': len(jobs)}, 'timestamp': datetime.now().isoformat()})}\n\n"
             
         except Exception as e:
             logger.error(f"Error in streaming job search: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e), 'timestamp': datetime.now().isoformat()})}\n\n"
     
-    return StreamingResponse(generate_stream(), media_type="text/event-stream")
+    return StreamingResponse(generate_stream(), media_type="text/plain")
 
 @app.post("/analyze-contract-opportunities", response_model=ContractAnalysisResponse)
 async def analyze_contract_opportunities(request: ContractOpportunityRequest):
@@ -633,6 +740,235 @@ async def get_company_jobs(request: CompanyJobsRequest):
         
     except Exception as e:
         logger.error(f"Error fetching company jobs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/webhook/results")
+async def receive_webhook_results(request: WebhookRequest):
+    """Receive processing results from the pipeline"""
+    try:
+        logger.info(f"Received webhook results for batch {request.batch_id}")
+        
+        # Store results in Supabase if available
+        if supabase:
+            try:
+                # Store batch summary
+                batch_data = {
+                    "batch_id": request.batch_id,
+                    "summary": request.summary,
+                    "timestamp": request.timestamp,
+                    "status": "completed"
+                }
+                supabase.table("batches").insert(batch_data).execute()
+                
+                # Store individual results
+                for result in request.results:
+                    result_data = {
+                        "batch_id": request.batch_id,
+                        "company": result.company,
+                        "job_title": result.job_title,
+                        "job_url": result.job_url,
+                        "has_ta_team": result.has_ta_team,
+                        "contacts_found": result.contacts_found,
+                        "top_contacts": result.top_contacts,
+                        "recommendation": result.recommendation,
+                        "hunter_emails": result.hunter_emails,
+                        "instantly_campaign_id": result.instantly_campaign_id,
+                        "timestamp": result.timestamp
+                    }
+                    supabase.table("company_analysis").insert(result_data).execute()
+                
+                logger.info(f"✅ Stored {len(request.results)} results in Supabase for batch {request.batch_id}")
+                
+            except Exception as db_error:
+                logger.error(f"Database error: {db_error}")
+        else:
+            logger.warning("⚠️  Supabase not available - results not stored")
+        
+        # Log results
+        for result in request.results:
+            logger.info(f"Company: {result.company}, TA Team: {result.has_ta_team}, Recommendation: {result.recommendation}")
+        
+        return {"status": "success", "batch_id": request.batch_id}
+        
+    except Exception as e:
+        logger.error(f"Error processing webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/process-jobs-background")
+async def process_jobs_background(request: JobSearchRequest):
+    """Process jobs in background and send results via webhook"""
+    try:
+        # Generate batch ID
+        batch_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Parse query and search jobs
+        search_params = job_scraper.parse_query(request.query)
+        jobs = job_scraper.search_jobs(search_params, max_results=50)
+        
+        if not jobs:
+            raise HTTPException(status_code=404, detail="No jobs found")
+        
+        # Process jobs in background (async)
+        asyncio.create_task(process_jobs_background_task(batch_id, jobs, request))
+        
+        return {
+            "status": "processing",
+            "batch_id": batch_id,
+            "jobs_found": len(jobs),
+            "webhook_url": f"http://localhost:8000/webhook/results"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting background processing: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request: JobSearchRequest):
+    """Background task to process jobs and send webhook results"""
+    try:
+        results = []
+        processed_count = 0
+        
+        # Process jobs in batches with rate limiting
+        max_jobs_per_batch = 5
+        total_jobs = len(jobs)
+        
+        for batch_start in range(0, total_jobs, max_jobs_per_batch):
+            batch_end = min(batch_start + max_jobs_per_batch, total_jobs)
+            batch_jobs = jobs[batch_start:batch_end]
+            
+            # Process current batch
+            for job in batch_jobs:
+                company = job.get('company', '')
+                
+                # Skip enterprise companies
+                enterprise_companies = ["google", "microsoft", "amazon", "apple"]
+                if company and any(enterprise in company.lower() for enterprise in enterprise_companies):
+                    continue
+                
+                # Analyze company
+                contacts, has_ta_team = contact_finder.find_contacts(
+                    company=company,
+                    role_hint=job.get('title', ''),
+                    keywords=job_scraper.extract_keywords(job.get('description', ''))
+                )
+                
+                # Create result
+                result = WebhookResult(
+                    company=company,
+                    job_title=job.get('title', ''),
+                    job_url=job.get('job_url', ''),
+                    has_ta_team=has_ta_team,
+                    contacts_found=len(contacts),
+                    top_contacts=contacts[:3] if contacts else [],
+                    recommendation="TARGET" if not has_ta_team else "SKIP - Has TA team",
+                    timestamp=datetime.now().isoformat()
+                )
+                
+                results.append(result)
+                processed_count += 1
+            
+            # Send webhook for this batch
+            webhook_data = WebhookRequest(
+                batch_id=batch_id,
+                results=results,
+                summary={
+                    "total_processed": processed_count,
+                    "total_jobs": total_jobs,
+                    "batch_number": batch_start // max_jobs_per_batch + 1
+                },
+                timestamp=datetime.now().isoformat()
+            )
+            
+            # Send webhook (in production, this would be to your webhook URL)
+            await send_webhook(webhook_data)
+            
+            # Wait between batches
+            if batch_end < total_jobs:
+                await asyncio.sleep(60)
+        
+        logger.info(f"Background processing complete for batch {batch_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in background processing: {e}")
+
+async def send_webhook(webhook_data: WebhookRequest):
+    """Send webhook to configured endpoint"""
+    try:
+        # In production, this would be your webhook URL
+        webhook_url = "http://localhost:8000/webhook/results"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                webhook_url,
+                json=webhook_data.dict(),
+                headers={"Content-Type": "application/json"}
+            )
+            
+        logger.info(f"Webhook sent successfully: {response.status_code}")
+        
+    except Exception as e:
+        logger.error(f"Error sending webhook: {e}")
+
+@app.get("/batch/{batch_id}")
+async def get_batch_results(batch_id: str):
+    """Get results for a specific batch"""
+    try:
+        if not supabase:
+            raise HTTPException(status_code=503, detail="Supabase not configured")
+        
+        # Get batch summary
+        batch_response = supabase.table("batches").select("*").eq("batch_id", batch_id).execute()
+        
+        if not batch_response.data:
+            raise HTTPException(status_code=404, detail="Batch not found")
+        
+        # Get batch results
+        results_response = supabase.table("company_analysis").select("*").eq("batch_id", batch_id).execute()
+        
+        return {
+            "batch": batch_response.data[0],
+            "results": results_response.data,
+            "total_results": len(results_response.data)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching batch results: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/batches")
+async def get_all_batches(limit: int = 10, offset: int = 0):
+    """Get all batches with pagination"""
+    try:
+        if not supabase:
+            raise HTTPException(status_code=503, detail="Supabase not configured")
+        
+        response = supabase.table("batches").select("*").order("timestamp", desc=True).range(offset, offset + limit - 1).execute()
+        
+        return {
+            "batches": response.data,
+            "total": len(response.data)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching batches: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/companies/target")
+async def get_target_companies(limit: int = 20, offset: int = 0):
+    """Get companies marked as TARGET (no TA team)"""
+    try:
+        if not supabase:
+            raise HTTPException(status_code=503, detail="Supabase not configured")
+        
+        response = supabase.table("company_analysis").select("*").eq("recommendation", "TARGET").order("timestamp", desc=True).range(offset, offset + limit - 1).execute()
+        
+        return {
+            "target_companies": response.data,
+            "total": len(response.data)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching target companies: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

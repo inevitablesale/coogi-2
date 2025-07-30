@@ -20,10 +20,48 @@ class ContactFinder:
             "cto": 5, "chief": 5, "vp": 4, "head": 3, "director": 2, 
             "manager": 1, "senior": 3, "lead": 2, "founder": 5, "ceo": 5
         }
+        
+        # Rate limiter for RapidAPI (20 requests per minute)
+        self.rate_limiter = self._create_rate_limiter()
+    
+    def _create_rate_limiter(self):
+        """Create a rate limiter for RapidAPI calls"""
+        class RateLimiter:
+            def __init__(self, max_requests=20, time_window=60):
+                self.max_requests = max_requests
+                self.time_window = time_window
+                self.requests = []
+            
+            def can_make_request(self):
+                """Check if we can make a request without hitting rate limit"""
+                now = time.time()
+                # Remove requests older than time_window
+                self.requests = [req_time for req_time in self.requests if now - req_time < self.time_window]
+                return len(self.requests) < self.max_requests
+            
+            def record_request(self):
+                """Record that a request was made"""
+                self.requests.append(time.time())
+            
+            def wait_if_needed(self):
+                """Wait if we're at the rate limit"""
+                if not self.can_make_request():
+                    wait_time = self.time_window - (time.time() - self.requests[0])
+                    if wait_time > 0:
+                        logger.info(f"Rate limit reached. Waiting {wait_time:.1f} seconds...")
+                        time.sleep(wait_time)
+                self.record_request()
+        
+        return RateLimiter(max_requests=20, time_window=60)
     
     def find_contacts(self, company: str, role_hint: str, keywords: List[str]) -> Tuple[List[Dict[str, Any]], bool]:
         """Find company contacts and determine if they have a talent acquisition team"""
         try:
+            # Check if company name is valid
+            if not company or company.strip() == "":
+                logger.warning(f"Invalid company name: {company}")
+                return [], False
+                
             # Always try RapidAPI first for real LinkedIn data
             contacts, has_ta_team = self._get_contacts_from_rapidapi(company, role_hint, keywords)
             
@@ -46,103 +84,244 @@ class ContactFinder:
         """Get company contacts from RapidAPI SaleLeads LinkedIn scraper"""
         try:
             logger.info(f"Attempting RapidAPI contact discovery for company: {company}")
-            people_url = "https://fresh-linkedin-scraper-api.p.rapidapi.com/api/v1/company/people"
+            
+            # Step 1: Get company profile first to get company ID and employee count
+            profile_url = "https://fresh-linkedin-scraper-api.p.rapidapi.com/api/v1/company/profile"
             headers = {
                 "X-RapidAPI-Key": self.rapidapi_key,
                 "X-RapidAPI-Host": "fresh-linkedin-scraper-api.p.rapidapi.com"
             }
             
-            # Get company people directly by company name
-            logger.info(f"Calling SaleLeads API people endpoint for: {company}")
-            people_resp = requests.get(people_url, params={"company": company, "page": 1}, headers=headers, timeout=15)
-            logger.info(f"SaleLeads API response: {people_resp.status_code}")
+            # Get company profile to verify company exists and get company ID
+            logger.info(f"Calling SaleLeads API profile endpoint for: {company}")
+            # Rate limit check before API call
+            self.rate_limiter.wait_if_needed()
+            profile_resp = requests.get(profile_url, params={"company": company}, headers=headers, timeout=15)
+            logger.info(f"SaleLeads API profile response: {profile_resp.status_code}")
             
-            if people_resp.status_code != 200:
-                logger.warning(f"SaleLeads API failed with status {people_resp.status_code}: {people_resp.text[:200]}")
-                logger.error(f"SaleLeads API unavailable for {company} - no contact data available")
+            if profile_resp.status_code != 200:
+                logger.warning(f"SaleLeads API profile failed with status {profile_resp.status_code}: {profile_resp.text[:200]}")
+                logger.error(f"SaleLeads API profile unavailable for {company} - company not found")
                 return [], False
                 
-            people_data = people_resp.json()
+            profile_data = profile_resp.json()
             
-            # Check if the API call was successful
-            if not people_data.get("success", False):
-                logger.warning(f"SaleLeads API returned unsuccessful response for {company}")
-                logger.info(f"🎯 TARGET COMPANY: {company} - no TA team, high conversion opportunity")
-                return [], False  # Return empty instead of demo data
+            # Check if the profile API call was successful
+            if not profile_data.get("success", False):
+                logger.warning(f"SaleLeads API profile returned unsuccessful response for {company}")
+                logger.info(f"🎯 TARGET COMPANY: {company} - company profile not found")
+                return [], False
             
-            people = people_data.get("data", [])
-            logger.info(f"Found {len(people)} people from SaleLeads API for {company}")
-
-            # Check for talent acquisition team FIRST (volume optimization)
-            has_ta_team = self._has_talent_acquisition_team(people)
+            # Extract company ID and employee count
+            company_profile = profile_data.get("data", {})
+            company_id = company_profile.get("id")
+            company_verified = company_profile.get("verified", False)
+            employee_count = company_profile.get("employee_count", 0)
             
-            # PRIORITY CONTACT IDENTIFICATION for companies WITHOUT TA teams
-            role_hint_safe = (role_hint or "").lower()
-            keywords_safe = [k.lower() for k in keywords if k] if keywords else []
-            
-            # High-value contacts for recruiter outreach (decision makers, not HR)
-            target_roles = ["cto", "ceo", "founder", "vp", "director", "head", "lead", "manager", "principal", "senior"]
-            hiring_roles = ["engineering", "tech", "product", "development"] + keywords_safe + [role_hint_safe]
-            
-            ranked = []
-            
-            for p in people:
-                title = (p.get("title") or "").lower()
+            if not company_id:
+                logger.warning(f"No company ID found for {company}")
+                return [], False
                 
-                # Calculate decision-maker score
-                score = 0
+            logger.info(f"✅ Company profile found for {company} (ID: {company_id}, Verified: {company_verified}, Employees: {employee_count})")
+            
+            # Step 2: Two-Tier TA Team Detection
+            # Tier 1: Employee Count Check + Company Profile Clues
+            
+            # Check employee count first
+            if employee_count >= 20:
+                logger.warning(f"🚫 TIER 1 - EMPLOYEE COUNT: {company} has {employee_count} employees - likely has TA team")
+                return [], True
+            
+            # Check company profile clues for large companies (even if employee_count is missing)
+            company_name = (company_profile.get("name") or "").lower()
+            company_industry = (company_profile.get("industry") or "").lower()
+            
+            # Large company indicators
+            large_company_indicators = [
+                "inc", "corp", "corporation", "enterprises", "holdings", "group", "international", 
+                "global", "worldwide", "national", "federal", "government", "university", "college",
+                "hospital", "medical center", "health system", "bank", "financial"
+            ]
+            
+            # Check if company name or industry suggests large company
+            is_likely_large = any(indicator in company_name for indicator in large_company_indicators) or \
+                             any(indicator in company_industry for indicator in large_company_indicators)
+            
+            if is_likely_large and employee_count == 0:
+                logger.warning(f"🚫 TIER 1 - LARGE COMPANY CLUES: {company} has indicators of large company - likely has TA team")
+                return [], True
+            
+            # Handle cases where employee_count is missing (0) - be conservative
+            # For companies with missing employee count, proceed to Tier 2 analysis
+            if employee_count == 0:
+                logger.warning(f"⚠️  TIER 1 - MISSING EMPLOYEE COUNT: {company} - proceeding to role analysis")
+            
+            logger.info(f"✅ TIER 1 - EMPLOYEE COUNT: {company} has {employee_count} employees - proceeding to role analysis")
+            
+            # Tier 2: Role Analysis (using /api/v1/company/people)
+            people_url = "https://fresh-linkedin-scraper-api.p.rapidapi.com/api/v1/company/people"
+            
+            # Limit to checking max 2 pages (20 roles max) regardless of employee count
+            pages_to_check = 2
+            logger.info(f"Checking {pages_to_check} pages (max 20 roles) for {company}")
+            
+            all_people = []
+            ta_roles_found = []
+            roles_checked = 0
+            
+            # Check multiple pages to ensure we analyze all employees (max 20 roles)
+            for page in range(1, pages_to_check + 1):
+                logger.info(f"Calling SaleLeads API people endpoint for company ID: {company_id}, page: {page}")
+                # Rate limit check before API call
+                self.rate_limiter.wait_if_needed()
+                people_resp = requests.get(people_url, params={"company_id": company_id, "page": page}, headers=headers, timeout=15)
+                logger.info(f"SaleLeads API response for page {page}: {people_resp.status_code}")
                 
-                # High priority: C-level and VPs (decision makers)
-                if any(role in title for role in ["cto", "ceo", "founder", "chief"]):
-                    score += 10
-                elif any(role in title for role in ["vp", "vice president"]):
-                    score += 8
-                elif any(role in title for role in ["director", "head"]):
-                    score += 6
-                elif any(role in title for role in ["manager", "lead", "principal"]):
-                    score += 4
-                elif any(role in title for role in ["senior", "sr"]):
-                    score += 2
+                if people_resp.status_code != 200:
+                    logger.warning(f"SaleLeads API failed with status {people_resp.status_code}: {people_resp.text[:200]}")
+                    break
+                    
+                people_data = people_resp.json()
                 
-                # Bonus for technical roles (likely to understand hiring needs)
-                if any(tech in title for tech in hiring_roles):
-                    score += 3
+                # Check if the API call was successful
+                if not people_data.get("success", False):
+                    logger.warning(f"SaleLeads API returned unsuccessful response for page {page}")
+                    break
                 
-                # Include high-scoring contacts (decision makers and technical leaders)
-                if score >= 2:  # Only quality contacts
-                    ranked.append((score, {
-                        "full_name": "Contact",  # Generic name for privacy
-                        "title": p.get("title") or "Unknown Title",
-                        "url": "",  # Remove LinkedIn URLs for privacy
-                        "decision_score": score
-                    }))
+                page_people = people_data.get("data", [])
+                all_people.extend(page_people)
+                roles_checked += len(page_people)
+                
+                # Check for TA roles in this page's people data
+                ta_keywords = ["talent", "recruiter", "recruiting", "people ops", "hr", "human resources", "people partner", "talent acquisition", "talent partner", "people operations", "hiring", "recruitment"]
+                
+                for person in page_people:
+                    title = (person.get("title") or "").lower()
+                    for keyword in ta_keywords:
+                        if keyword in title:
+                            ta_roles_found.append(title)
+                
+                # If we found TA roles, we can stop checking more pages
+                if ta_roles_found:
+                    logger.warning(f"🚫 TA ROLES DETECTED on page {page}: {ta_roles_found}")
+                    break
+                
+                # Stop if we've checked 20 roles
+                if roles_checked >= 20:
+                    logger.info(f"Reached 20 roles limit on page {page}")
+                    break
+                
+                # If this page has fewer people than expected, we've reached the end
+                if len(page_people) < 10:
+                    logger.info(f"Reached end of people data on page {page}")
+                    break
             
-            # Sort by decision-maker score - prioritize highest-value contacts
-            ranked_sorted = sorted(ranked, key=lambda x: x[0], reverse=True)[:5]  # Top 5 decision makers
-            contacts = [p for _, p in ranked_sorted]
+            logger.info(f"Found {len(all_people)} total people at {company} (checked {roles_checked} roles)")
             
-            # Log role summary for Hunter.io searches later
-            all_titles = [p.get("title") for p in people if p.get("title")]
-            unique_titles = list(set(all_titles))[:15] if all_titles else ["No titles found"]
+            if ta_roles_found:
+                unique_roles = list(set(ta_roles_found))[:5]
+                logger.warning(f"🚫 TIER 2 - TA ROLES DETECTED: {unique_roles}")
+                return [], True
             
-            if contacts:
-                top_contact_titles = [c["title"] for c in contacts]
-                logger.info(f"🎯 TOP TARGETS for {company}: {top_contact_titles}")
-                logger.info(f"📧 Hunter search roles: {unique_titles}")
-            else:
-                logger.info(f"⚠️  No decision makers found at {company}")
+            # ✅ TARGET: Passed both filters - no TA team detected
+            logger.info(f"✅ TIER 2 - NO TA ROLES: {company} passed both filters - ideal target for recruiters")
             
-            logger.info(f"SaleLeads API found {len(contacts)} high-value contacts for {company}")
-            return contacts, has_ta_team
+            # Step 3: Enhanced Intelligence (only for TARGET companies)
+            # Get job count: /api/v1/company/job-count
+            job_count = self._get_company_job_count(company_id, headers)
+            logger.info(f"📊 Company job count: {job_count} active positions")
+            
+            # Get job details: /api/v1/company/jobs (optional - for additional intelligence)
+            # job_details = self._get_company_jobs(company_id, headers, max_jobs=5)
+            
+            # Filter and score contacts
+            contacts = []
+            for person in all_people[:10]:  # Limit to top 10 contacts
+                if person.get("full_name") and person.get("title"):
+                    contact_score = self._calculate_contact_score(person, role_hint, keywords)
+                    contacts.append({
+                        "full_name": person.get("full_name", ""),
+                        "title": person.get("title", ""),
+                        "score": contact_score,
+                        "company": company
+                    })
+            
+            # Sort by score (highest first)
+            contacts.sort(key=lambda x: x["score"], reverse=True)
+            
+            return contacts, False  # No TA team detected
             
         except Exception as e:
-            logger.error(f"SaleLeads API error for {company}: {e}")
-            logger.error(f"No contact data available for {company} - no fallback data")
+            logger.error(f"Error in RapidAPI contact discovery for {company}: {e}")
             return [], False
-    
+
+    def _get_company_job_count(self, company_id: str, headers: Dict[str, str]) -> int:
+        """Get company job count from RapidAPI"""
+        try:
+            job_count_url = "https://fresh-linkedin-scraper-api.p.rapidapi.com/api/v1/company/job-count"
+            logger.info(f"Calling SaleLeads API job count endpoint for company ID: {company_id}")
+            
+            # Rate limit check before API call
+            self.rate_limiter.wait_if_needed()
+            job_count_resp = requests.get(job_count_url, params={"company_id": company_id}, headers=headers, timeout=15)
+            
+            if job_count_resp.status_code == 200:
+                job_count_data = job_count_resp.json()
+                if job_count_data.get("success", False):
+                    total_jobs = job_count_data.get("data", {}).get("total", 0)
+                    logger.info(f"✅ Job count API successful: {total_jobs} total jobs")
+                    return total_jobs
+                else:
+                    logger.warning(f"Job count API returned unsuccessful response")
+                    return 0
+            else:
+                logger.warning(f"Job count API failed with status {job_count_resp.status_code}")
+                return 0
+                
+        except Exception as e:
+            logger.error(f"Error getting job count: {e}")
+            return 0
+
+    def _get_company_jobs(self, company_id: str, headers: Dict[str, str], max_jobs: int = 10) -> List[Dict[str, Any]]:
+        """Get company jobs from RapidAPI"""
+        try:
+            jobs_url = "https://fresh-linkedin-scraper-api.p.rapidapi.com/api/v1/company/jobs"
+            logger.info(f"Calling SaleLeads API jobs endpoint for company ID: {company_id}")
+            
+            # Rate limit check before API call
+            self.rate_limiter.wait_if_needed()
+            jobs_resp = requests.get(
+                jobs_url, 
+                params={
+                    "company_id": company_id,
+                    "page": 1,
+                    "sort_by": "recent",
+                    "date_posted": "anytime"
+                }, 
+                headers=headers, 
+                timeout=15
+            )
+            
+            if jobs_resp.status_code == 200:
+                jobs_data = jobs_resp.json()
+                if jobs_data.get("success", False):
+                    jobs = jobs_data.get("data", [])
+                    logger.info(f"Found {len(jobs)} jobs at company")
+                    return jobs[:max_jobs]
+                else:
+                    logger.warning(f"SaleLeads API jobs returned unsuccessful response")
+                    return []
+            else:
+                logger.warning(f"SaleLeads API jobs failed with status {jobs_resp.status_code}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error getting company jobs: {e}")
+            return []
+
     def _calculate_contact_score(self, contact: Dict[str, Any], role_hint: str, keywords: List[str]) -> float:
         """Calculate relevance score for a contact"""
-        title = contact.get("title", "").lower()
+        title = (contact.get("title") or "").lower()
         score = 0
         
         # Base score from title rank
@@ -151,48 +330,15 @@ class ContactFinder:
                 score += self.title_rank[word]
         
         # Bonus for role hint match
-        if role_hint.lower() in title:
+        if role_hint and role_hint.lower() in title:
             score += 3
         
         # Bonus for keyword matches
         for keyword in keywords:
-            if keyword.lower() in title:
+            if keyword and keyword.lower() in title:
                 score += 1
         
         return score
-    
-    def _has_talent_acquisition_team(self, people: List[dict]) -> bool:
-        """Check if company has a talent acquisition team - critical for recruiter contract decisions"""
-        ta_keywords = ["talent", "recruiter", "recruiting", "people ops", "hr", "human resources", "people partner", "talent acquisition", "talent partner", "people operations", "hiring", "recruitment"]
-        
-        ta_roles_found = []
-        for person in people:
-            title = (person.get("title") or "").lower()
-            for keyword in ta_keywords:
-                if keyword in title:
-                    ta_roles_found.append(title)
-        
-        # Additional check for large enterprise companies that always have TA teams
-        company_name = ""
-        if people:
-            # Extract company name from first person's data
-            company_name = people[0].get("company", "").lower()
-        
-        enterprise_companies = ["google", "microsoft", "amazon", "apple", "meta", "facebook", "netflix", "tesla", "lockheed martin", "general dynamics", "boeing", "ibm", "oracle", "salesforce", "adobe", "intel", "nvidia", "uber", "airbnb", "twitter", "linkedin", "paypal", "jpmorgan", "goldman sachs", "morgan stanley", "blackrock", "mckinsey", "deloitte", "accenture", "pwc", "kpmg", "ey"]
-        
-        for enterprise in enterprise_companies:
-            if enterprise in company_name:
-                logger.warning(f"🚫 ENTERPRISE COMPANY: {company_name.title()} - guaranteed TA team (major corporation)")
-                return True
-        
-        # Log the talent acquisition roles found for recruiter decision-making
-        if ta_roles_found:
-            unique_roles = list(set(ta_roles_found))[:5]  # Remove duplicates, show top 5
-            logger.warning(f"🚫 TA TEAM DETECTED: {unique_roles}")
-            return True
-        else:
-            logger.info(f"✅ TARGET: No TA team - direct hiring opportunity")
-            return False
     
     def find_email(self, title: str, company: str) -> Optional[str]:
         """Find email address using Hunter.io API only"""
@@ -212,6 +358,8 @@ class ContactFinder:
         """Find email address using Hunter.io API"""
         try:
             # Extract domain from company name (simplified)
+            if not company:
+                return None
             domain = f"{company.lower().replace(' ', '').replace('inc', '').replace('corp', '')}.com"
             
             url = "https://api.hunter.io/v2/domain-search"
@@ -240,7 +388,7 @@ class ContactFinder:
         score = 0.0
         
         # Base score from contact title
-        title = contact.get("title", "").lower()
+                    title = (contact.get("title") or "").lower()
         for word in title.split():
             if word in self.title_rank:
                 score += self.title_rank[word]

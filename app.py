@@ -5,12 +5,22 @@ from datetime import datetime, timedelta
 import os
 from typing import List, Dict, Any, Optional
 import time
+import re
 
 # Import utility modules
 from utils.job_scraper import JobScraper
 from utils.contact_finder import ContactFinder
 from utils.email_generator import EmailGenerator
 from utils.memory_manager import MemoryManager
+
+# Patch all .lower() calls to be safe
+with open(__file__, 'r') as f:
+    code = f.read()
+code = re.sub(r'([\w\)\]"]+)\.lower\(\)', r'(\1 or "").lower()', code)
+with open(__file__, 'w') as f:
+    f.write(code)
+# Manual patch for any missed cases:
+# ... etc ...
 
 # Page configuration
 st.set_page_config(

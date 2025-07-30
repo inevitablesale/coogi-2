@@ -6,6 +6,7 @@ from typing import Dict, List, Any, Optional
 # Use external JobSpy API instead of local library
 import requests
 from openai import OpenAI
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ class JobScraper:
     
     def _fallback_parse_query(self, query: str) -> Dict[str, Any]:
         """Fallback query parsing without AI"""
-        query_lower = query.lower()
+        query_lower = (query or '').lower()
         
         # Simple keyword detection
         search_term = query
@@ -199,7 +200,7 @@ class JobScraper:
             'salary_min': None,
             'salary_max': None,
             'date_posted': job.get('listed_at'),
-            'is_remote': 'remote' in job.get('location', '').lower(),
+            'is_remote': 'remote' in (job.get('location') or '').lower(),
             'company_url': company_info.get('url', ''),
             'company_verified': company_info.get('verified', False),
             'easy_apply': job.get('is_easy_apply', False)
@@ -210,8 +211,8 @@ class JobScraper:
         # Remove common corporate suffixes
         suffixes = ['inc', 'llc', 'corp', 'ltd', 'co', 'company', 'corporation']
         
-        clean1 = name1.lower().strip()
-        clean2 = name2.lower().strip()
+                    clean1 = (name1 or '').lower().strip()
+            clean2 = (name2 or '').lower().strip()
         
         for suffix in suffixes:
             clean1 = clean1.replace(f' {suffix}', '').replace(f'.{suffix}', '').replace(f',{suffix}', '')
@@ -233,7 +234,7 @@ class JobScraper:
             
             # Add company size filter for startup targeting
             company_size_filter = ""
-            if "startup" in search_term.lower() or "startup" in search_params.get("keywords", []):
+            if "startup" in (search_term or '').lower() or "startup" in search_params.get("keywords", []):
                 company_size_filter = "startup"
             
             api_params = {
@@ -372,7 +373,7 @@ class JobScraper:
         if not text:
             return []
             
-        text_lower = text.lower()
+        text_lower = (text or '').lower()
         
         # Common tech and business keywords
         keywords = []
