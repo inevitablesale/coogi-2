@@ -8,6 +8,8 @@ MCP (Master Control Program) is an automated recruiting and outreach platform bu
 
 Preferred communication style: Simple, everyday language.
 
+**Business Model Clarification**: This is B2B outreach platform targeting recruiters/recruiting agencies to secure more recruiting contracts, NOT candidate outreach.
+
 ## System Architecture
 
 The application follows a modular architecture with clear separation of concerns:
