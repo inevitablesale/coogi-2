@@ -5,8 +5,8 @@ from datetime import datetime
 
 # Configure Streamlit page
 st.set_page_config(
-    page_title="MCP: Master Control Program",
-    page_icon="🤖",
+    page_title="ContractGPT - AI Search",
+    page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -60,212 +60,219 @@ def get_memory_stats():
     except requests.exceptions.RequestException as e:
         return False, str(e)
 
+# Custom CSS for dark theme and layout
+def inject_custom_css():
+    st.markdown("""
+    <style>
+    .main {
+        padding-top: 2rem;
+    }
+    
+    .stApp {
+        background-color: #0E1117;
+    }
+    
+    .center-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 60vh;
+        text-align: center;
+    }
+    
+    .search-container {
+        background: #1E1E1E;
+        border-radius: 12px;
+        padding: 2rem;
+        width: 100%;
+        max-width: 600px;
+        margin: 2rem auto;
+    }
+    
+    .suggestion-card {
+        background: #262626;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 0.5rem;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .suggestion-card:hover {
+        background: #333333;
+    }
+    
+    .sidebar-content {
+        background: #1A1A1A;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 0.5rem 0;
+    }
+    
+    .metric-card {
+        background: #1E1E1E;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 0.5rem 0;
+        border-left: 3px solid #00D4AA;
+    }
+    
+    .lead-card {
+        background: #1E1E1E;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        border-left: 4px solid #00D4AA;
+    }
+    
+    .target-indicator {
+        color: #00D4AA;
+        font-weight: bold;
+    }
+    
+    .skip-indicator {
+        color: #FF6B6B;
+        font-weight: bold;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # Main app
 def main():
-    st.title("🤖 MCP: Master Control Program")
-    st.write("### Automated Recruiting & Outreach Platform")
+    inject_custom_css()
     
     # Check API health
     api_healthy, health_data = check_api_health()
     
-    if not api_healthy:
-        st.error("❌ FastAPI backend is not running. Please start the API server first.")
-        st.code("python api.py")
-        st.stop()
-    
-    # Display API status
+    # Sidebar
     with st.sidebar:
-        st.header("🔧 System Status")
-        if health_data and isinstance(health_data, dict):
-            api_status = health_data.get("api_status", {})
-            for service, status in api_status.items():
-                icon = "✅" if status else "❌"
-                st.write(f"{icon} {service}")
-            
-            demo_mode = health_data.get("demo_mode", False)
-            if demo_mode:
-                st.warning("🔄 Email discovery in demo mode")
-            else:
-                st.success("🚀 All systems operational")
+        st.markdown("### Coogi AI")
+        st.markdown("---")
         
-        # Memory stats
-        st.header("📊 Statistics")
-        stats_success, stats_data = get_memory_stats()
-        if stats_success and stats_data and isinstance(stats_data, dict):
-            st.metric("Jobs Processed", stats_data.get("processed_jobs_count", 0))
-            st.metric("Contacts Found", stats_data.get("contacted_emails_count", 0))
-            st.metric("Messages Generated", stats_data.get("conversions_count", 0))
-    
-    # Main interface
-    tab1, tab2, tab3 = st.tabs(["🔍 Job Search", "✉️ Message Generator", "📈 Analytics"])
-    
-    with tab1:
-        st.header("Job Search & Lead Generation")
+        # Navigation
+        st.markdown("#### 📊 New Chat")
+        st.markdown("#### 🎯 AI Campaigns")
+        st.markdown("---")
         
-        col1, col2 = st.columns([2, 1])
+        # Agents section
+        st.markdown("**AGENTS**")
+        st.markdown("📋 pitching recruitment...")
+        st.markdown("---")
         
-        with col1:
-            query = st.text_input(
-                "Search Query", 
-                placeholder="e.g., software engineer remote, data scientist NYC, marketing manager startup",
-                help="Describe the type of job you're looking for"
-            )
+        # History section  
+        st.markdown("**HISTORY**")
+        st.markdown("📄 Show me B2B SaaS...")
+        st.markdown("---")
         
-        with col2:
-            max_leads = st.number_input("Max Leads", min_value=1, max_value=50, value=10)
-        
-        col3, col4, col5 = st.columns(3)
-        
-        with col3:
-            hours_old = st.selectbox("Job Age", [24, 48, 72, 168], index=0, format_func=lambda x: f"{x} hours")
-        
-        with col4:
-            enforce_salary = st.checkbox("Require Salary Info", value=True)
-        
-        with col5:
-            auto_messages = st.checkbox("Auto-generate Messages", value=False)
-        
-        if st.button("🚀 Search Jobs", type="primary", use_container_width=True):
-            if not query.strip():
-                st.error("Please enter a search query")
-            else:
-                with st.spinner("Searching for jobs and contacts..."):
-                    success, result = search_jobs(
-                        query, max_leads, hours_old, enforce_salary, auto_messages
-                    )
-                
-                if success and result and isinstance(result, dict):
-                    st.success(f"Found {result.get('jobs_found', 0)} jobs, generated {len(result.get('leads', []))} leads")
-                    
-                    # Display results
-                    leads = result.get('leads', [])
-                    if leads:
-                        st.header("📋 Generated Leads")
-                        
-                        for i, lead in enumerate(leads):
-                            with st.expander(f"Lead {i+1}: {lead.get('name', 'Unknown')} at {lead.get('company', 'Unknown')}", expanded=i==0):
-                                col_a, col_b = st.columns(2)
-                                
-                                with col_a:
-                                    st.write(f"**Name:** {lead.get('name', 'N/A')}")
-                                    st.write(f"**Title:** {lead.get('title', 'N/A')}")
-                                    st.write(f"**Company:** {lead.get('company', 'N/A')}")
-                                    st.write(f"**Email:** {lead.get('email', 'N/A')}")
-                                    st.write(f"**Score:** {lead.get('score', 0)}/10")
-                                
-                                with col_b:
-                                    st.write(f"**Job:** {lead.get('job_title', 'N/A')}")
-                                    job_url = lead.get('job_url', '')
-                                    if job_url:
-                                        st.write(f"**Job URL:** [View Position]({job_url})")
-                                    st.write(f"**Timestamp:** {lead.get('timestamp', 'N/A')}")
-                                
-                                message = lead.get('message', '')
-                                if message:
-                                    st.write("**Generated Message:**")
-                                    st.text_area(f"Message for {lead.get('name', 'Contact')}", message, height=150, key=f"msg_{i}")
-                    else:
-                        st.info("No leads generated. Try adjusting your search criteria.")
-                
-                elif success:
-                    st.warning("Search completed but no results found")
-                else:
-                    st.error(f"Search failed: {result}")
-    
-    with tab2:
-        st.header("Message Generator")
-        st.write("Generate personalized outreach messages for specific contacts")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            job_title = st.text_input("Job Title", placeholder="Senior Software Engineer")
-            company = st.text_input("Company", placeholder="TechCorp Inc")
-        
-        with col2:
-            contact_title = st.text_input("Contact Title", placeholder="VP of Engineering")
-            job_url = st.text_input("Job URL", placeholder="https://company.com/jobs/123")
-        
-        tone = st.selectbox("Message Tone", ["professional", "friendly", "direct"], index=0)
-        
-        if st.button("✨ Generate Message", type="primary"):
-            if not all([job_title, company, contact_title]):
-                st.error("Please fill in job title, company, and contact title")
-            else:
-                with st.spinner("Generating personalized message..."):
-                    success, result = generate_message(job_title, company, contact_title, job_url, tone)
-                
-                if success and result and isinstance(result, dict):
-                    st.success("Message generated successfully!")
-                    st.write("**Subject:**")
-                    st.code(result.get('subject', 'No subject'))
-                    st.write("**Message:**")
-                    st.text_area("Generated Message", result.get('message', 'No message'), height=300)
-                else:
-                    st.error(f"Message generation failed: {result}")
-    
-    with tab3:
-        st.header("Platform Analytics")
-        
-        stats_success, stats_data = get_memory_stats()
-        if stats_success and stats_data and isinstance(stats_data, dict):
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric(
-                    "Jobs Processed",
-                    stats_data.get("processed_jobs_count", 0),
-                    help="Total number of job postings analyzed"
-                )
-            
-            with col2:
-                st.metric(
-                    "Contacts Found",
-                    stats_data.get("contacted_emails_count", 0),
-                    help="Number of unique contacts discovered"
-                )
-            
-            with col3:
-                st.metric(
-                    "Messages Generated",
-                    stats_data.get("conversions_count", 0),
-                    help="Total outreach messages created"
-                )
-            
-            with col4:
-                st.metric(
-                    "Companies Tracked",
-                    stats_data.get("tracked_companies_count", 0),
-                    help="Unique companies in database"
-                )
-            
-            # Performance summary
-            st.subheader("📊 Performance Summary")
-            
-            processed_jobs = stats_data.get("processed_jobs_count", 0)
-            if processed_jobs > 0:
-                contacted_emails = stats_data.get("contacted_emails_count", 0)
-                conversion_rate = (contacted_emails / processed_jobs) * 100
-                st.metric("Lead Conversion Rate", f"{conversion_rate:.1f}%")
-            
-            last_hunt = stats_data.get("last_hunt_time", "")
-            if last_hunt:
-                st.write(f"**Last Search:** {last_hunt}")
-            
-            # Clear memory option
-            st.subheader("🗑️ System Management")
-            if st.button("Clear Memory", help="Reset all tracking data"):
-                try:
-                    response = requests.delete(f"{API_BASE_URL}/memory", timeout=5)
-                    if response.status_code == 200:
-                        st.success("Memory cleared successfully!")
-                        st.rerun()
-                    else:
-                        st.error("Failed to clear memory")
-                except requests.exceptions.RequestException:
-                    st.error("Could not connect to API")
+        # Extension status
+        st.markdown("**EXTENSION STATUS**")
+        if api_healthy:
+            st.markdown("🟢 **Connected**")
+            st.markdown("Extension detected.")
         else:
-            st.error("Could not load analytics data")
+            st.markdown("🔴 **Disconnected**") 
+            st.markdown("Extension not detected.")
+        
+        # User info
+        st.markdown("---")
+        st.markdown("👤 chris@bg@gmail.com")
+    
+    # Main content area
+    st.markdown('<div class="center-content">', unsafe_allow_html=True)
+    
+    # Header
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("## 🔍 AI Search powered by ContractGPT")
+        st.markdown("This is your command center. Tell me what kind of deals you're looking for, and I'll get to work.")
+    
+    # Search suggestions
+    st.markdown("### 💡 Try one of these prompts:")
+    
+    # Create suggestion cards
+    suggestions = [
+        "Show me B2B SaaS companies in New York hiring for senior sales roles right now — I want to pitch recruitment support.",
+        "Find remote fintech startups currently hiring software engineers — especially those with no talent acquisition team.",
+        "Which companies in London are hiring for Marketing Director roles? Prioritize ones with urgent or repeated listings.",
+        "I'm looking for Series A companies posting product manager roles — flag ones with high salaries or growth signals for outreach."
+    ]
+    
+    col1, col2 = st.columns(2)
+    for i, suggestion in enumerate(suggestions):
+        with col1 if i % 2 == 0 else col2:
+            if st.button(suggestion[:100] + "..." if len(suggestion) > 100 else suggestion, 
+                        key=f"suggest_{i}", use_container_width=True):
+                st.session_state.search_query = suggestion
+    
+    st.markdown("---")
+    
+    # Search input
+    search_query = st.text_input(
+        "Find new deals...", 
+        placeholder="e.g., 'Series A fintechs in NY hiring sales leaders'",
+        key="search_input",
+        value=st.session_state.get('search_query', '')
+    )
+    
+    # Advanced options in expander
+    with st.expander("🔧 Advanced Search Options"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            max_leads = st.number_input("Max Companies", min_value=1, max_value=20, value=5)
+        with col2:
+            hours_old = st.selectbox("Job Age", [24, 48, 72, 168], index=2, 
+                                   format_func=lambda x: f"{x} hours")
+        with col3:
+            auto_messages = st.checkbox("Generate Outreach Messages", value=False)
+    
+    if st.button("🚀 Search", type="primary", use_container_width=True):
+        if search_query.strip():
+            with st.spinner("🔍 Analyzing job markets and identifying opportunities..."):
+                success, result = search_jobs(
+                    search_query, max_leads, hours_old, False, auto_messages
+                )
+            
+            if success and result and isinstance(result, dict):
+                leads = result.get('leads', [])
+                jobs_found = result.get('jobs_found', 0)
+                
+                st.success(f"📊 Found {jobs_found} jobs, identified {len(leads)} high-value opportunities")
+                
+                if leads:
+                    st.markdown("## 🎯 Target Companies")
+                    
+                    for i, lead in enumerate(leads):
+                        with st.container():
+                            st.markdown(f"""
+                            <div class="lead-card">
+                                <h4>🏢 {lead.get('company', 'Unknown Company')}</h4>
+                                <p><strong>Target Contact:</strong> {lead.get('title', 'Unknown Title')}</p>
+                                <p><strong>Hiring For:</strong> {lead.get('job_title', 'Unknown Role')}</p>
+                                <p><strong>Opportunity Score:</strong> {lead.get('score', 0)}/10</p>
+                                <p><strong>Email:</strong> {lead.get('email', 'Use Hunter.io')}</p>
+                                <p><span class="target-indicator">✅ TARGET: No internal TA team - high conversion probability</span></p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            if lead.get('message'):
+                                with st.expander("📝 Generated Outreach Message"):
+                                    st.text_area("Message", lead['message'], height=150, key=f"msg_{i}")
+                            
+                            job_url = lead.get('job_url')
+                            if job_url:
+                                st.markdown(f"[🔗 View Job Posting]({job_url})")
+                            
+                            st.markdown("---")
+                else:
+                    st.info("🔍 No high-value opportunities found. Try expanding your search criteria or location.")
+            else:
+                st.error(f"❌ Search failed: {result}")
+        else:
+            st.warning("Please enter a search query")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
 
 if __name__ == "__main__":
     main()
