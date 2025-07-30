@@ -61,7 +61,16 @@ class ContactFinder:
         """Find company contacts and determine if they have a talent acquisition team"""
         try:
             # Always try RapidAPI first for real LinkedIn data
-            return self._get_contacts_from_rapidapi(company, role_hint, keywords)
+            contacts, has_ta_team = self._get_contacts_from_rapidapi(company, role_hint, keywords)
+            
+            # VOLUME OPTIMIZATION: Skip companies with TA teams unless specifically requested
+            if has_ta_team:
+                logger.info(f"⚠️  SKIP RECOMMENDATION: {company} has internal talent acquisition - low conversion probability")
+                return [], True  # Return empty contacts to signal skip
+            else:
+                logger.info(f"🎯 TARGET COMPANY: {company} - no TA team, high conversion opportunity")
+                return contacts, False
+                
         except Exception as e:
             logger.error(f"Error finding contacts for {company}: {e}")
             # Only fall back to demo data if RapidAPI fails
@@ -117,44 +126,66 @@ class ContactFinder:
             people = people_data.get("data", [])
             logger.info(f"Found {len(people)} people from SaleLeads API for {company}")
 
-            # Rank contacts by relevance - handle null values
+            # Check for talent acquisition team FIRST (volume optimization)
+            has_ta_team = self._has_talent_acquisition_team(people)
+            
+            # PRIORITY CONTACT IDENTIFICATION for companies WITHOUT TA teams
             role_hint_safe = (role_hint or "").lower()
             keywords_safe = [k.lower() for k in keywords if k] if keywords else []
-            dynamic_keywords = [role_hint_safe] + keywords_safe + ["recruiting", "talent", "people", "founder", "cto", "ceo", "vp", "director", "manager", "head"]
+            
+            # High-value contacts for recruiter outreach (decision makers, not HR)
+            target_roles = ["cto", "ceo", "founder", "vp", "director", "head", "lead", "manager", "principal", "senior"]
+            hiring_roles = ["engineering", "tech", "product", "development"] + keywords_safe + [role_hint_safe]
+            
             ranked = []
             
             for p in people:
                 title = (p.get("title") or "").lower()
-                full_name = p.get("full_name") or "LinkedIn Member"
                 
-                # Calculate base score from title keywords
-                title_words = title.split()
-                score = max([self.title_rank.get(word, 0) for word in title_words if word in self.title_rank], default=0)
+                # Calculate decision-maker score
+                score = 0
                 
-                # Add bonus for keyword matches
-                keyword_matches = sum(1 for k in dynamic_keywords if k in title)
-                score += keyword_matches * 2
+                # High priority: C-level and VPs (decision makers)
+                if any(role in title for role in ["cto", "ceo", "founder", "chief"]):
+                    score += 10
+                elif any(role in title for role in ["vp", "vice president"]):
+                    score += 8
+                elif any(role in title for role in ["director", "head"]):
+                    score += 6
+                elif any(role in title for role in ["manager", "lead", "principal"]):
+                    score += 4
+                elif any(role in title for role in ["senior", "sr"]):
+                    score += 2
                 
-                # Include contacts with relevant titles or high-ranking positions
-                if (any(k in title for k in dynamic_keywords) or 
-                    any(rank_word in title for rank_word in ["engineer", "developer", "manager", "director", "vp", "cto", "ceo", "founder", "head", "lead", "recruiter", "talent", "people", "hr"])):
-                    
+                # Bonus for technical roles (likely to understand hiring needs)
+                if any(tech in title for tech in hiring_roles):
+                    score += 3
+                
+                # Include high-scoring contacts (decision makers and technical leaders)
+                if score >= 2:  # Only quality contacts
                     ranked.append((score, {
                         "full_name": "Contact",  # Generic name for privacy
                         "title": p.get("title") or "Unknown Title",
-                        "url": ""  # Remove LinkedIn URLs for privacy
+                        "url": "",  # Remove LinkedIn URLs for privacy
+                        "decision_score": score
                     }))
             
-            # Sort by score and take top contacts
-            ranked_sorted = sorted(ranked, key=lambda x: x[0], reverse=True)[:10]  # Top 10 contacts
+            # Sort by decision-maker score - prioritize highest-value contacts
+            ranked_sorted = sorted(ranked, key=lambda x: x[0], reverse=True)[:5]  # Top 5 decision makers
             contacts = [p for _, p in ranked_sorted]
-            has_ta_team = self._has_talent_acquisition_team(people)
             
             # Log role summary for Hunter.io searches later
             all_titles = [p.get("title") for p in people if p.get("title")]
-            unique_titles = list(set(all_titles))[:10] if all_titles else ["No titles found"]
-            logger.info(f"Company roles found for Hunter searches: {unique_titles}")
-            logger.info(f"SaleLeads API successfully found {len(contacts)} relevant contacts for {company}")
+            unique_titles = list(set(all_titles))[:15] if all_titles else ["No titles found"]
+            
+            if contacts:
+                top_contact_titles = [c["title"] for c in contacts]
+                logger.info(f"🎯 TOP TARGETS for {company}: {top_contact_titles}")
+                logger.info(f"📧 Hunter search roles: {unique_titles}")
+            else:
+                logger.info(f"⚠️  No decision makers found at {company}")
+            
+            logger.info(f"SaleLeads API found {len(contacts)} high-value contacts for {company}")
             return contacts, has_ta_team
             
         except Exception as e:
@@ -197,10 +228,10 @@ class ContactFinder:
         # Log the talent acquisition roles found for recruiter decision-making
         if ta_roles_found:
             unique_roles = list(set(ta_roles_found))[:5]  # Remove duplicates, show top 5
-            logger.info(f"✓ Talent acquisition team detected - Roles: {unique_roles}")
+            logger.info(f"❌ SKIP: Internal TA team detected - {unique_roles}")
             return True
         else:
-            logger.info("✗ No dedicated talent acquisition team detected - Direct hiring likely")
+            logger.info(f"✅ TARGET: No TA team - direct hiring opportunity")
             return False
     
     def find_email(self, title: str, company: str) -> Optional[str]:
