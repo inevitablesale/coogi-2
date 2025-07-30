@@ -207,24 +207,11 @@ def main():
             if not query.strip():
                 st.error("Please enter a search query")
             else:
-                if stream_updates:
-                    # Use streaming search with live updates
-                    status_container = st.empty()
-                    progress_container = st.container()
-                    
-                    with status_container:
-                        st.info("🔄 Initializing job search...")
-                    
-                    success, result = search_jobs_streaming(
-                        query, max_leads, hours_old, enforce_salary, auto_messages, 
-                        status_container=progress_container
+                # Use fast search for reliable results
+                with st.spinner("🔍 Searching for jobs and contacts..."):
+                    success, result = search_jobs(
+                        query, max_leads, hours_old, enforce_salary, auto_messages
                     )
-                else:
-                    # Use regular search
-                    with st.spinner("Searching for jobs and contacts..."):
-                        success, result = search_jobs(
-                            query, max_leads, hours_old, enforce_salary, auto_messages
-                        )
                 
                 if success and result and isinstance(result, dict):
                     # Show final summary
