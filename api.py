@@ -11,6 +11,7 @@ from utils.job_scraper import JobScraper
 from utils.contact_finder import ContactFinder
 from utils.email_generator import EmailGenerator
 from utils.memory_manager import MemoryManager
+from utils.contract_analyzer import ContractAnalyzer
 import requests  # Add missing import for company analysis API calls
 import time  # Add time import for rate limiting
 import json
@@ -30,6 +31,7 @@ job_scraper = JobScraper()
 contact_finder = ContactFinder()
 email_generator = EmailGenerator()
 memory_manager = MemoryManager()
+contract_analyzer = ContractAnalyzer()
 # company_analyzer = CompanyAnalyzer(rapidapi_key=os.getenv("RAPIDAPI_KEY", ""))  # Will be initialized after import
 
 # Request/Response Models
@@ -103,6 +105,29 @@ class HealthResponse(BaseModel):
     timestamp: str
     api_status: Dict[str, bool]
     demo_mode: bool
+
+class ContractOpportunityRequest(BaseModel):
+    query: str
+    max_companies: int = 20
+
+class ContractOpportunity(BaseModel):
+    company: str
+    total_positions: int
+    estimated_budget: int
+    contract_value_score: float
+    urgency_indicators: int
+    growth_indicators: int
+    seniority_score: float
+    departments: List[str]
+    locations: List[str]
+    role_types: List[str]
+    recruiting_pitch: str
+    jobs: List[Dict[str, Any]]
+
+class ContractAnalysisResponse(BaseModel):
+    opportunities: List[ContractOpportunity]
+    summary: Dict[str, Any]
+    timestamp: str
 
 # API Endpoints
 @app.get("/", response_model=HealthResponse)
@@ -548,6 +573,35 @@ async def search_jobs_stream(request: JobSearchRequest):
             yield f"data: {json.dumps({'type': 'error', 'message': str(e), 'timestamp': datetime.now().isoformat()})}\n\n"
     
     return StreamingResponse(generate_stream(), media_type="text/event-stream")
+
+@app.post("/analyze-contract-opportunities", response_model=ContractAnalysisResponse)
+async def analyze_contract_opportunities(request: ContractOpportunityRequest):
+    """Analyze job market to identify high-value recruiting contract opportunities"""
+    try:
+        # Parse query and search for jobs
+        search_params = job_scraper.parse_query(request.query)
+        jobs = job_scraper.search_jobs(search_params, max_results=request.max_companies * 5)
+        
+        if not jobs:
+            raise HTTPException(status_code=404, detail="No jobs found matching criteria")
+        
+        # Analyze contract opportunities
+        analysis = contract_analyzer.analyze_contract_opportunities(jobs, request.max_companies)
+        
+        # Convert to response format
+        opportunities = [
+            ContractOpportunity(**opp) for opp in analysis['opportunities']
+        ]
+        
+        return ContractAnalysisResponse(
+            opportunities=opportunities,
+            summary=analysis['summary'],
+            timestamp=analysis['timestamp']
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in contract opportunity analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
