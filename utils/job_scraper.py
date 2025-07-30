@@ -113,6 +113,75 @@ class JobScraper:
             "keywords": keywords
         }
     
+    def get_all_company_jobs(self, company_name: str, location: str = "United States", max_results: int = 100) -> List[Dict[str, Any]]:
+        """Get all available jobs from a specific company"""
+        logger.info(f"🎯 Getting ALL jobs for company: {company_name}")
+        
+        # Multiple search strategies to find all company jobs
+        search_terms = [
+            company_name,
+            f"{company_name} careers",
+            f"jobs at {company_name}",
+            f"{company_name} hiring"
+        ]
+        
+        all_jobs = []
+        unique_job_urls = set()
+        
+        for search_term in search_terms:
+            try:
+                params = {
+                    'query': search_term,
+                    'location': location,
+                    'sites': 'linkedin,indeed,zip_recruiter',
+                    'enforce_annual_salary': False,
+                    'results_wanted': max_results // len(search_terms),
+                    'hours_old': 168,  # 1 week old for broader results
+                }
+                
+                logger.info(f"Searching for '{search_term}' jobs...")
+                response = requests.post(self.jobspy_api_url, json=params, timeout=30)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    jobs = data.get('jobs', [])
+                    
+                    # Filter for exact company match and deduplicate
+                    for job in jobs:
+                        job_company = job.get('company', '').strip().lower()
+                        target_company = company_name.lower()
+                        job_url = job.get('job_url', '')
+                        
+                        # Company name matching with fuzzy logic
+                        if (target_company in job_company or 
+                            job_company in target_company or
+                            self._company_names_match(job_company, target_company)) and job_url not in unique_job_urls:
+                            
+                            all_jobs.append(job)
+                            unique_job_urls.add(job_url)
+                            
+            except Exception as e:
+                logger.warning(f"Error searching for '{search_term}': {e}")
+                continue
+        
+        logger.info(f"✅ Found {len(all_jobs)} total jobs for {company_name}")
+        return all_jobs
+    
+    def _company_names_match(self, name1: str, name2: str) -> bool:
+        """Check if company names are similar (handles Inc, LLC, etc.)"""
+        # Remove common corporate suffixes
+        suffixes = ['inc', 'llc', 'corp', 'ltd', 'co', 'company', 'corporation']
+        
+        clean1 = name1.lower().strip()
+        clean2 = name2.lower().strip()
+        
+        for suffix in suffixes:
+            clean1 = clean1.replace(f' {suffix}', '').replace(f'.{suffix}', '').replace(f',{suffix}', '')
+            clean2 = clean2.replace(f' {suffix}', '').replace(f'.{suffix}', '').replace(f',{suffix}', '')
+        
+        # Check if either contains the other (fuzzy matching)
+        return clean1 in clean2 or clean2 in clean1 or abs(len(clean1) - len(clean2)) <= 3
+
     def search_jobs(self, search_params: Dict[str, Any], max_results: int = 50) -> List[Dict[str, Any]]:
         """Search for jobs using external JobSpy API or demo data"""
         try:
