@@ -71,6 +71,9 @@ class RateLimiter:
 # Initialize rate limiter
 rate_limiter = RateLimiter(max_requests=20, time_window=60)
 
+# Global search cancellation tracking
+active_searches = {}  # batch_id -> cancellation flag
+
 app = FastAPI(
     title="MCP: Master Control Program API",
     description="Automated recruiting and outreach platform API",
@@ -1285,6 +1288,9 @@ async def process_jobs_background(request: JobSearchRequest):
         # Generate batch ID
         batch_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
+        # Mark search as active
+        active_searches[batch_id] = False  # False = not cancelled
+        
         # Parse query and search jobs
         search_params = job_scraper.parse_query(request.query)
         jobs = job_scraper.search_jobs(search_params, max_results=50)
@@ -1306,6 +1312,65 @@ async def process_jobs_background(request: JobSearchRequest):
         logger.error(f"Error starting background processing: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/cancel-search/{batch_id}")
+async def cancel_search(batch_id: str):
+    """Cancel an active search by batch_id"""
+    try:
+        if batch_id not in active_searches:
+            raise HTTPException(status_code=404, detail="Search not found")
+        
+        # Mark search as cancelled
+        active_searches[batch_id] = True
+        logger.info(f"🚫 Search {batch_id} marked for cancellation")
+        
+        return {
+            "status": "cancelled",
+            "batch_id": batch_id,
+            "message": "Search cancellation requested"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error cancelling search {batch_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/search-status/{batch_id}")
+async def get_search_status(batch_id: str):
+    """Get the status of a search by batch_id"""
+    try:
+        if batch_id not in active_searches:
+            raise HTTPException(status_code=404, detail="Search not found")
+        
+        is_cancelled = active_searches[batch_id]
+        status = "cancelled" if is_cancelled else "active"
+        
+        return {
+            "batch_id": batch_id,
+            "status": status,
+            "is_cancelled": is_cancelled
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting search status for {batch_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/active-searches")
+async def get_active_searches():
+    """Get all active searches"""
+    try:
+        active = {batch_id: not cancelled for batch_id, cancelled in active_searches.items() if not cancelled}
+        cancelled = {batch_id: cancelled for batch_id, cancelled in active_searches.items() if cancelled}
+        
+        return {
+            "active_searches": list(active.keys()),
+            "cancelled_searches": list(cancelled.keys()),
+            "total_active": len(active),
+            "total_cancelled": len(cancelled)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting active searches: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request: JobSearchRequest):
     """Background task to process jobs and send webhook results"""
     try:
@@ -1317,11 +1382,21 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
         total_jobs = len(jobs)
         
         for batch_start in range(0, total_jobs, max_jobs_per_batch):
+            # Check if search has been cancelled
+            if batch_id in active_searches and active_searches[batch_id]:
+                logger.info(f"🚫 Search {batch_id} was cancelled, stopping processing")
+                break
+            
             batch_end = min(batch_start + max_jobs_per_batch, total_jobs)
             batch_jobs = jobs[batch_start:batch_end]
             
             # Process current batch
             for job in batch_jobs:
+                # Check for cancellation before each job
+                if batch_id in active_searches and active_searches[batch_id]:
+                    logger.info(f"🚫 Search {batch_id} was cancelled, stopping processing")
+                    break
+                
                 company = job.get('company', '')
                 
                 # Skip enterprise companies
@@ -1352,6 +1427,11 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                 results.append(result)
                 processed_count += 1
             
+            # Check for cancellation before sending webhook
+            if batch_id in active_searches and active_searches[batch_id]:
+                logger.info(f"🚫 Search {batch_id} was cancelled, stopping processing")
+                break
+            
             # Send webhook for this batch
             webhook_data = WebhookRequest(
                 batch_id=batch_id,
@@ -1371,10 +1451,17 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
             if batch_end < total_jobs:
                 await asyncio.sleep(60)
         
+        # Clean up the search from active_searches
+        if batch_id in active_searches:
+            del active_searches[batch_id]
+        
         logger.info(f"Background processing complete for batch {batch_id}")
         
     except Exception as e:
         logger.error(f"Error in background processing: {e}")
+        # Clean up on error
+        if batch_id in active_searches:
+            del active_searches[batch_id]
 
 async def send_webhook(webhook_data: WebhookRequest):
     """Send webhook to configured endpoint"""
