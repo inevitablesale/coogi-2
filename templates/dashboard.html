@@ -903,7 +903,11 @@
                     body: JSON.stringify({
                         query: query,
                         hours_old: parseInt(formData.get('hoursOld')),
-                        create_campaigns: formData.get('createCampaigns') === 'on'
+                        enforce_salary: true,
+                        auto_generate_messages: false,
+                        create_campaigns: formData.get('createCampaigns') === 'on',
+                        campaign_name: null,
+                        min_score: 0.5
                     })
                 });
 
