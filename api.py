@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+import os
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import os
@@ -79,6 +81,27 @@ app = FastAPI(
     description="Automated recruiting and outreach platform API",
     version="1.0.0"
 )
+
+# Serve static files (CSS, JS, images)
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/ui", response_class=HTMLResponse)
+async def get_ui():
+    """Serve the web UI"""
+    try:
+        with open("templates/index.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="""
+        <html>
+        <head><title>MindGlimpse UI</title></head>
+        <body>
+            <h1>UI Not Found</h1>
+            <p>The UI template file is missing. Please ensure templates/index.html exists.</p>
+        </body>
+        </html>
+        """, status_code=404)
 
 # Initialize services
 job_scraper = JobScraper()
