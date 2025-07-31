@@ -1,0 +1,8 @@
+# Exclude Supabase Edge Functions from Railway build
+supabase/functions/
+.nixpacks/
+.git/
+.gitignore
+README.md
+*.md
+.env* 
