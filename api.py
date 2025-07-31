@@ -242,6 +242,18 @@ class WebhookRequest(BaseModel):
     timestamp: str
 
 # API Endpoints
+@app.get("/debug/env")
+async def debug_environment():
+    """Debug endpoint to check environment variables"""
+    return {
+        "OPENAI_API_KEY": "SET" if os.getenv("OPENAI_API_KEY") else "NOT SET",
+        "HUNTER_API_KEY": "SET" if os.getenv("HUNTER_API_KEY") else "NOT SET", 
+        "INSTANTLY_API_KEY": "SET" if os.getenv("INSTANTLY_API_KEY") else "NOT SET",
+        "RAPIDAPI_KEY": "SET" if os.getenv("RAPIDAPI_KEY") else "NOT SET",
+        "CLEAROUT_API_KEY": "SET" if os.getenv("CLEAROUT_API_KEY") else "NOT SET",
+        "all_env_vars": dict(os.environ)
+    }
+
 @app.get("/", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint"""
