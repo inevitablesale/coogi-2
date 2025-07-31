@@ -16,7 +16,8 @@ class ProxyManager:
         self.current_proxy_index = 0
         self.last_proxy_refresh = 0
         self.proxy_refresh_interval = 300  # 5 minutes
-        self._load_free_proxies()
+        # Don't load proxies during initialization to avoid blocking startup
+        # They will be loaded on first use
     
     def _load_free_proxies(self):
         """Load free proxies from various sources"""
@@ -30,7 +31,7 @@ class ProxyManager:
             
             for source in proxy_sources:
                 try:
-                    response = requests.get(source, timeout=10)
+                    response = requests.get(source, timeout=5)
                     if response.status_code == 200:
                         proxy_lines = response.text.strip().split('\n')
                         for line in proxy_lines:
@@ -60,18 +61,23 @@ class ProxyManager:
             logger.error(f"Failed to load proxies: {e}")
             # Fallback to no proxies
             self.proxies = []
+            logger.info("🔄 Will use direct connections (no proxies)")
     
     def _test_proxy(self, proxy: str) -> bool:
         """Test if a proxy is working"""
         try:
             proxies = {"http": proxy, "https": proxy}
-            response = requests.get("http://httpbin.org/ip", proxies=proxies, timeout=5)
+            response = requests.get("http://httpbin.org/ip", proxies=proxies, timeout=3)
             return response.status_code == 200
         except:
             return False
     
     def get_next_proxy(self) -> Optional[Dict[str, str]]:
         """Get the next proxy in rotation"""
+        # Load proxies on first use if not already loaded
+        if not self.proxies:
+            self._load_free_proxies()
+        
         if not self.proxies:
             return None
         
