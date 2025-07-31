@@ -8,117 +8,12 @@ from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-class ProxyManager:
-    """Manages rotating proxies for API calls"""
-    
-    def __init__(self):
-        self.proxies = []
-        self.current_proxy_index = 0
-        self.last_proxy_refresh = 0
-        self.proxy_refresh_interval = 300  # 5 minutes
-        # Don't load proxies during initialization to avoid blocking startup
-        # They will be loaded on first use
-    
-    def _load_free_proxies(self):
-        """Load free proxies from various sources"""
-        try:
-            # Free proxy list from multiple sources
-            proxy_sources = [
-                "https://api.proxyscrape.com/v2/?request=get&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all",
-                "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
-                "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt"
-            ]
-            
-            for source in proxy_sources:
-                try:
-                    response = requests.get(source, timeout=5)
-                    if response.status_code == 200:
-                        proxy_lines = response.text.strip().split('\n')
-                        for line in proxy_lines:
-                            if ':' in line and line.strip():
-                                # Format: ip:port
-                                proxy = line.strip()
-                                if self._test_proxy(proxy):
-                                    self.proxies.append(proxy)
-                                    logger.info(f"✅ Added working proxy: {proxy}")
-                except Exception as e:
-                    logger.warning(f"Failed to load proxies from {source}: {e}")
-            
-            # Add some reliable free proxies as fallback
-            fallback_proxies = [
-                "http://proxy.proxycrawl.com:8080",
-                "http://proxy.proxycrawl.com:8081",
-                "http://proxy.proxycrawl.com:8082"
-            ]
-            
-            for proxy in fallback_proxies:
-                if self._test_proxy(proxy):
-                    self.proxies.append(proxy)
-            
-            logger.info(f"🔄 Loaded {len(self.proxies)} working proxies")
-            
-        except Exception as e:
-            logger.error(f"Failed to load proxies: {e}")
-            # Fallback to no proxies
-            self.proxies = []
-            logger.info("🔄 Will use direct connections (no proxies)")
-    
-    def _test_proxy(self, proxy: str) -> bool:
-        """Test if a proxy is working"""
-        try:
-            proxies = {"http": proxy, "https": proxy}
-            response = requests.get("http://httpbin.org/ip", proxies=proxies, timeout=3)
-            return response.status_code == 200
-        except:
-            return False
-    
-    def get_next_proxy(self) -> Optional[Dict[str, str]]:
-        """Get the next proxy in rotation"""
-        # Only load proxies if we haven't tried yet and haven't loaded any
-        if not self.proxies and self.last_proxy_refresh == 0:
-            # Start loading proxies in background (non-blocking)
-            try:
-                self._load_free_proxies()
-            except Exception as e:
-                logger.warning(f"Failed to load proxies: {e}")
-                self.proxies = []
-        
-        # If no proxies available, return None (will use direct connection)
-        if not self.proxies:
-            return None
-        
-        # Refresh proxies if needed
-        if time.time() - self.last_proxy_refresh > self.proxy_refresh_interval:
-            try:
-                self._load_free_proxies()
-            except Exception as e:
-                logger.warning(f"Failed to refresh proxies: {e}")
-        
-        # Get next proxy
-        proxy = self.proxies[self.current_proxy_index]
-        self.current_proxy_index = (self.current_proxy_index + 1) % len(self.proxies)
-        
-        return {"http": proxy, "https": proxy}
-    
-    def mark_proxy_failed(self, proxy_dict: Dict[str, str]):
-        """Mark a proxy as failed and remove it"""
-        if not proxy_dict:
-            return
-        
-        failed_proxy = proxy_dict.get("http", "") or proxy_dict.get("https", "")
-        if failed_proxy in self.proxies:
-            self.proxies.remove(failed_proxy)
-            logger.warning(f"❌ Removed failed proxy: {failed_proxy}")
-            
-            # If we're running low on proxies, refresh
-            if len(self.proxies) < 5:
-                self._load_free_proxies()
+
 
 class JobScraper:
     def __init__(self):
         self.rapidapi_key = os.getenv("RAPIDAPI_KEY", "")
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
-        self.proxy_manager = ProxyManager()
         
         # US cities for comprehensive search
         self.us_cities = [
@@ -376,26 +271,9 @@ class JobScraper:
                     "verbose": kwargs.get('verbose', 1)
                 }
                 
-                # Wait for a proxy to be available, then use it
-                logger.info(f"🌐 Waiting for proxy for {search_term} in {location}...")
-                proxy_dict = None
-                max_wait_time = 30  # Wait up to 30 seconds for a proxy
-                start_time = time.time()
-                
-                while not proxy_dict and (time.time() - start_time) < max_wait_time:
-                    proxy_dict = self.proxy_manager.get_next_proxy()
-                    if not proxy_dict:
-                        logger.info(f"⏳ Waiting for proxy... ({int(time.time() - start_time)}s)")
-                        time.sleep(2)  # Wait 2 seconds before checking again
-                
-                if proxy_dict:
-                    proxy_info = f" via proxy {list(proxy_dict.values())[0]}"
-                    logger.info(f"🌐 Making JobSpy API call for {search_term} in {location}{proxy_info}")
-                else:
-                    logger.warning(f"⚠️  No proxy available after {max_wait_time}s, making direct call")
-                    proxy_dict = None
-                
-                response = requests.get(url, params=params, proxies=proxy_dict, timeout=30)
+                # Make direct JobSpy API call
+                logger.info(f"🌐 Making JobSpy API call for {search_term} in {location}")
+                response = requests.get(url, params=params, timeout=30)
                 logger.info(f"🌐 JobSpy API response status: {response.status_code}")
                 
                 if response.status_code == 200:
@@ -406,8 +284,6 @@ class JobScraper:
                     return jobs
                 else:
                     logger.error(f"❌ JobSpy API error: {response.status_code} - {response.text}")
-                    if proxy_dict:
-                        self.proxy_manager.mark_proxy_failed(proxy_dict)
                     retry_count += 1
                     if retry_count < max_retries:
                         logger.info(f"🔄 Retrying... (attempt {retry_count + 1}/{max_retries})")
@@ -416,8 +292,6 @@ class JobScraper:
                     
             except requests.exceptions.Timeout as e:
                 logger.error(f"❌ JobSpy API timeout: {e}")
-                if proxy_dict:
-                    self.proxy_manager.mark_proxy_failed(proxy_dict)
                 retry_count += 1
                 if retry_count < max_retries:
                     logger.info(f"🔄 Retrying after timeout... (attempt {retry_count + 1}/{max_retries})")
@@ -425,8 +299,6 @@ class JobScraper:
                 continue
             except requests.exceptions.ConnectionError as e:
                 logger.error(f"❌ JobSpy API connection error: {e}")
-                if proxy_dict:
-                    self.proxy_manager.mark_proxy_failed(proxy_dict)
                 retry_count += 1
                 if retry_count < max_retries:
                     logger.info(f"🔄 Retrying after connection error... (attempt {retry_count + 1}/{max_retries})")
@@ -434,8 +306,6 @@ class JobScraper:
                 continue
             except requests.exceptions.RequestException as e:
                 logger.error(f"❌ JobSpy API request error: {e}")
-                if proxy_dict:
-                    self.proxy_manager.mark_proxy_failed(proxy_dict)
                 retry_count += 1
                 if retry_count < max_retries:
                     logger.info(f"🔄 Retrying after request error... (attempt {retry_count + 1}/{max_retries})")
