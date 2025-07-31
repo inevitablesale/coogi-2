@@ -144,6 +144,48 @@
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
 
+        .agent-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .agent-header h3 {
+            margin: 0;
+            color: #333;
+        }
+
+        .btn-sm {
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+
+        .agent-info {
+            margin-bottom: 15px;
+        }
+
+        .agent-logs {
+            border-top: 1px solid #eee;
+            padding-top: 15px;
+        }
+
+        .agent-logs h4 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #333;
+        }
+
+        .agent-log-content {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
         .status-card h3 {
             margin-bottom: 10px;
             color: #333;
@@ -358,7 +400,7 @@
                     jobsFound: result.jobs_found || 0
                 });
                 
-                addLog(`Agent started with batch ID: ${batchId}`, 'success', batchId);
+                addLog(`Agent started with batch ID: ${batchId}`, 'success');
                 showAlert(`Agent started successfully! Batch ID: ${batchId}`, 'success');
                 
                 // Start monitoring this agent
@@ -366,6 +408,12 @@
                 
                 // Update agents display
                 updateAgentsDisplay();
+                
+                // Add initial log to agent
+                setTimeout(() => {
+                    addAgentLog(batchId, `Agent started for query: ${query}`, 'success');
+                    addAgentLog(batchId, `Jobs found: ${result.jobs_found || 0}`, 'info');
+                }, 100);
                 
                 // Clear form
                 document.getElementById('searchForm').reset();
@@ -379,7 +427,8 @@
         // Cancel specific agent
         async function cancelAgent(batchId) {
             try {
-                addLog(`Cancelling agent ${batchId}...`, 'warning', batchId);
+                addAgentLog(batchId, `Cancelling agent...`, 'warning');
+                addLog(`Cancelling agent ${batchId}...`, 'warning');
                 
                 const response = await fetch(`${API_BASE}/cancel-search/${batchId}`, {
                     method: 'POST'
@@ -390,7 +439,8 @@
                 }
 
                 const result = await response.json();
-                addLog(`Agent cancelled: ${result.message}`, 'success', batchId);
+                addAgentLog(batchId, `Agent cancelled: ${result.message}`, 'success');
+                addLog(`Agent cancelled: ${result.message}`, 'success');
                 showAlert(`Agent cancelled successfully!`, 'success');
                 
                 // Remove agent from tracking
@@ -399,7 +449,8 @@
                 updateAgentsDisplay();
                 
             } catch (error) {
-                addLog(`Error cancelling agent: ${error.message}`, 'error', batchId);
+                addAgentLog(batchId, `Error cancelling agent: ${error.message}`, 'error');
+                addLog(`Error cancelling agent: ${error.message}`, 'error');
                 showAlert(`Error cancelling agent: ${error.message}`, 'error');
             }
         }
@@ -418,17 +469,22 @@
                         agent.status = status.status;
                         agent.isCancelled = status.is_cancelled;
                         
+                        // Add status update to agent logs
+                        addAgentLog(batchId, `Status: ${status.status}`, 'info');
+                        
                         // If completed or cancelled, remove from active agents
                         if (status.status === 'completed' || status.is_cancelled) {
                             activeAgents.delete(batchId);
                             stopAgentMonitoring(batchId);
-                            addLog(`Agent ${batchId} finished`, 'info', batchId);
+                            addAgentLog(batchId, `Agent finished`, 'success');
+                            addLog(`Agent ${batchId} finished`, 'info');
                         }
                         
                         updateAgentsDisplay();
                     }
                 }
             } catch (error) {
+                addAgentLog(batchId, `Error checking status: ${error.message}`, 'error');
                 addLog(`Error checking agent status: ${error.message}`, 'error', batchId);
             }
         }
@@ -466,22 +522,45 @@
                 
                 agentsHtml += `
                     <div class="status-card">
-                        <h3>Agent: ${agent.query}</h3>
-                        <p><strong>Batch ID:</strong> ${batchId}</p>
-                        <p><strong>Status:</strong> 
-                            <span class="status-badge status-${agent.status}">${agent.status}</span>
-                        </p>
-                        <p><strong>Jobs Found:</strong> ${agent.jobsFound}</p>
-                        <p><strong>Runtime:</strong> ${minutes}m ${seconds}s</p>
-                        <button onclick="cancelAgent('${batchId}')" class="btn btn-danger" style="margin-top: 10px;">
-                            🚫 Kill Agent
-                        </button>
+                        <div class="agent-header">
+                            <h3>Agent: ${agent.query}</h3>
+                            <button onclick="cancelAgent('${batchId}')" class="btn btn-danger btn-sm">
+                                🚫 Kill Agent
+                            </button>
+                        </div>
+                        <div class="agent-info">
+                            <p><strong>Batch ID:</strong> ${batchId}</p>
+                            <p><strong>Status:</strong> 
+                                <span class="status-badge status-${agent.status}">${agent.status}</span>
+                            </p>
+                            <p><strong>Jobs Found:</strong> ${agent.jobsFound}</p>
+                            <p><strong>Runtime:</strong> ${minutes}m ${seconds}s</p>
+                        </div>
+                        <div class="agent-logs" id="agent-logs-${batchId}">
+                            <h4>📝 Agent Logs</h4>
+                            <div class="agent-log-content">
+                                <div class="log-entry log-info">Agent started...</div>
+                            </div>
+                        </div>
                     </div>
                 `;
             });
             
             agentsHtml += '</div>';
             agentsContent.innerHTML = agentsHtml;
+        }
+
+        // Add log to specific agent
+        function addAgentLog(batchId, message, type = 'info') {
+            const agentLogsContainer = document.getElementById(`agent-logs-${batchId}`);
+            if (agentLogsContainer) {
+                const logContent = agentLogsContainer.querySelector('.agent-log-content');
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry log-${type}`;
+                logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                logContent.appendChild(logEntry);
+                logContent.scrollTop = logContent.scrollHeight;
+            }
         }
 
         // Event listeners
