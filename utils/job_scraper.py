@@ -385,7 +385,9 @@ class JobScraper:
                     proxy_info = f" via proxy {list(proxy_dict.values())[0]}"
                     logger.info(f"🌐 Calling your JobSpy API for {search_term} in {location}{proxy_info}")
                 
+                logger.info(f"🌐 Making JobSpy API request to {url}")
                 response = requests.get(url, params=params, proxies=proxy_dict, timeout=30)
+                logger.info(f"🌐 JobSpy API response status: {response.status_code}")
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -403,13 +405,31 @@ class JobScraper:
                         time.sleep(2)  # Brief delay before retry
                     continue
                     
-            except requests.exceptions.RequestException as e:
-                logger.error(f"❌ JobSpy API call failed: {e}")
+            except requests.exceptions.Timeout as e:
+                logger.error(f"❌ JobSpy API timeout: {e}")
                 if proxy_dict:
                     self.proxy_manager.mark_proxy_failed(proxy_dict)
                 retry_count += 1
                 if retry_count < max_retries:
-                    logger.info(f"🔄 Retrying... (attempt {retry_count + 1}/{max_retries})")
+                    logger.info(f"🔄 Retrying after timeout... (attempt {retry_count + 1}/{max_retries})")
+                    time.sleep(2)  # Brief delay before retry
+                continue
+            except requests.exceptions.ConnectionError as e:
+                logger.error(f"❌ JobSpy API connection error: {e}")
+                if proxy_dict:
+                    self.proxy_manager.mark_proxy_failed(proxy_dict)
+                retry_count += 1
+                if retry_count < max_retries:
+                    logger.info(f"🔄 Retrying after connection error... (attempt {retry_count + 1}/{max_retries})")
+                    time.sleep(2)  # Brief delay before retry
+                continue
+            except requests.exceptions.RequestException as e:
+                logger.error(f"❌ JobSpy API request error: {e}")
+                if proxy_dict:
+                    self.proxy_manager.mark_proxy_failed(proxy_dict)
+                retry_count += 1
+                if retry_count < max_retries:
+                    logger.info(f"🔄 Retrying after request error... (attempt {retry_count + 1}/{max_retries})")
                     time.sleep(2)  # Brief delay before retry
                 continue
             except Exception as e:
