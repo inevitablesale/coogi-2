@@ -296,9 +296,9 @@ class ContactFinder:
             
             if result.lower() == 'unknown':
                 logger.info(f"🤔 OpenAI doesn't know size of {company}")
-            return None
-        
-        try:
+                return None
+            
+            try:
                 employee_count = int(result)
                 logger.info(f"📊 OpenAI knows {company} has ~{employee_count} employees")
                 return employee_count
