@@ -255,7 +255,7 @@ async def health_check():
     """Health check endpoint"""
     api_status = {
         "OpenAI": bool(os.getenv("OPENAI_API_KEY")),
-        "RapidAPI": True,  # Using configured key
+        "RapidAPI": bool(os.getenv("RAPIDAPI_KEY")),
         "Hunter.io": bool(os.getenv("HUNTER_API_KEY")),
         "Instantly.ai": bool(os.getenv("INSTANTLY_API_KEY")),
         "JobSpy_API": True  # Using external API
