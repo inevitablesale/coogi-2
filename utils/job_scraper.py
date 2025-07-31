@@ -179,7 +179,6 @@ class JobScraper:
         
         all_jobs = []
         processed_companies = set()
-        processed_company_domains = {}  # Cache domains by company name
         
         # Search across multiple US cities for better coverage
         if location.lower() in ["united states", "us", "usa"]:
@@ -221,11 +220,8 @@ class JobScraper:
                     if company and job_key not in processed_companies:
                         processed_companies.add(job_key)
                         
-                        # Add domain finding for company website (cache by company name)
-                        if not job.get('company_website'):
-                            if company not in processed_company_domains:
-                                processed_company_domains[company] = self._find_company_domain(company, tracker)
-                            job['company_website'] = processed_company_domains[company]
+                        # Don't do domain finding here - let the main flow handle it per company
+                        # Domain finding will be done in the one-company-at-a-time flow
                         
                         all_jobs.append(job)
                 

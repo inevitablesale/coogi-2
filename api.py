@@ -408,15 +408,8 @@ async def search_jobs(request: JobSearchRequest):
             logger.info(f"🔍 Overriding hours_old to {request.hours_old} hours")
             await log_to_supabase(batch_id, f"🔍 Overriding hours_old to {request.hours_old} hours", "info")
         
-        # Search jobs - get all available jobs
+        # Search jobs city by city and process each city's companies immediately
         await log_to_supabase(batch_id, f"🚀 Starting job search: {request.query}", "info")
-        jobs = job_scraper.search_jobs(search_params, tracker=tracker, max_results=50)
-        
-        if not jobs:
-            await log_to_supabase(batch_id, "❌ No jobs found matching criteria", "error")
-            raise HTTPException(status_code=404, detail="No jobs found matching criteria")
-        
-        await log_to_supabase(batch_id, f"✅ Found {len(jobs)} jobs to analyze", "success")
         
         # Initialize tracking variables
         processed_companies = set()
@@ -427,184 +420,228 @@ async def search_jobs(request: JobSearchRequest):
         hunter_hits = 0
         processed_count = 0
         
-        # Process companies one at a time through the complete flow
-        for job in jobs:
-            # Check if already processed
-            job_fingerprint = memory_manager.create_job_fingerprint(job)
-            if memory_manager.is_job_processed(job_fingerprint):
-                continue
-            
-            company = job.get('company', '')
-            job_title = job.get('title', '')
-            job_url = job.get('job_url', '')
-            
-            # Skip if we've already analyzed this company
-            if company in processed_companies:
-                logger.info(f"Skipping {company} - already analyzed")
-                memory_manager.mark_job_processed(job_fingerprint)
-                continue
-            
-            # Check blacklist BEFORE making any API calls
-            if blacklist_manager.is_blacklisted(company):
-                logger.info(f"⏭️  Skipping {company} - blacklisted")
-                memory_manager.mark_job_processed(job_fingerprint)
-                continue
-            
-            # Process this company through the complete flow
-            await log_to_supabase(batch_id, f"🔍 Processing company: {company} - {job_title}", "info", company, job_title, job_url, "company_start")
+        # Get jobs city by city and process each city immediately
+        all_jobs = []
+        total_jobs_found = 0
+        
+        # Process each city sequentially
+        for city in job_scraper.us_cities[:10]:  # Limit to first 10 cities for testing
+            await log_to_supabase(batch_id, f"🏙️ Processing city: {city}", "info")
             
             try:
-                # STEP 1: Domain Search
-                domain = job_scraper._find_company_domain(company, tracker)
-                job['company_website'] = domain
-                
-                # STEP 2: LinkedIn Resolution (via OpenAI batch analysis)
-                analysis = contact_finder.batch_analyze_companies([company]).get(company, {})
-                linkedin_identifier = analysis.get('linkedin_identifier', company.lower().replace(" ", "-"))
-                tracker.save_linkedin_resolution(company, linkedin_identifier)
-                
-                # STEP 3: RapidAPI Analysis
-                description = job.get('description') or job.get('job_level') or ''
-                result = contact_finder.find_contacts(
-                    company=company,
-                    linkedin_identifier=linkedin_identifier,
-                    role_hint=job_title,
-                    keywords=job_scraper.extract_keywords(description),
-                    company_website=domain
+                # Get jobs for this specific city
+                city_jobs = job_scraper._call_jobspy_api(
+                    search_term=search_params.get('search_term', ''),
+                    location=city,
+                    hours_old=search_params.get('hours_old', 720),
+                    job_type=search_params.get('job_type', ''),
+                    is_remote=search_params.get('is_remote', False),
+                    site_name=search_params.get('site_name', ["indeed", "linkedin", "zip_recruiter", "google", "glassdoor"]),
+                    results_wanted=search_params.get('results_wanted', 200),
+                    offset=search_params.get('offset', 0),
+                    distance=search_params.get('distance', 25),
+                    easy_apply=search_params.get('easy_apply', False),
+                    country_indeed=search_params.get('country_indeed', 'us'),
+                    google_search_term=search_params.get('google_search_term', ''),
+                    linkedin_fetch_description=search_params.get('linkedin_fetch_description', False),
+                    verbose=search_params.get('verbose', False)
                 )
                 
-                contacts, has_ta_team, employee_roles, company_found = result
-                await log_to_supabase(batch_id, f"📊 Found {len(contacts)} contacts, TA team: {has_ta_team}", "info", company, job_title, job_url, "contact_analysis")
-                tracker.save_rapidapi_analysis(company, has_ta_team, contacts, employee_roles, company_found)
+                if not city_jobs:
+                    await log_to_supabase(batch_id, f"⚠️ No jobs found in {city}", "warning")
+                    continue
                 
-                # STEP 4: Hunter.io (if no TA team and company found)
-                hunter_emails = []
-                if not has_ta_team and company_found and domain:
-                    await log_to_supabase(batch_id, f"📡 Attempting Hunter.io lookup for: {company}", "info", company, job_title, job_url, "hunter_lookup")
+                await log_to_supabase(batch_id, f"✅ Found {len(city_jobs)} jobs in {city}", "success")
+                total_jobs_found += len(city_jobs)
+                
+                # Process all companies in this city immediately
+                city_companies_processed = 0
+                for job in city_jobs:
+                    # Check if already processed
+                    job_fingerprint = memory_manager.create_job_fingerprint(job)
+                    if memory_manager.is_job_processed(job_fingerprint):
+                        continue
+                    
+                    company = job.get('company', '')
+                    job_title = job.get('title', '')
+                    job_url = job.get('job_url', '')
+                    
+                    # Skip if we've already analyzed this company
+                    if company in processed_companies:
+                        logger.info(f"Skipping {company} - already analyzed")
+                        memory_manager.mark_job_processed(job_fingerprint)
+                        continue
+                    
+                    # Check blacklist BEFORE making any API calls
+                    if blacklist_manager.is_blacklisted(company):
+                        logger.info(f"⏭️  Skipping {company} - blacklisted")
+                        memory_manager.mark_job_processed(job_fingerprint)
+                        continue
+                    
+                    # Process this company through the complete flow
+                    await log_to_supabase(batch_id, f"🔍 Processing company: {company} - {job_title}", "info", company, job_title, job_url, "company_start")
+            
                     try:
-                        hunter_emails = contact_finder.find_hunter_emails_for_target_company(
+                        # STEP 1: Domain Search
+                        domain = job_scraper._find_company_domain(company, tracker)
+                        job['company_website'] = domain
+                
+                        # STEP 2: LinkedIn Resolution (via OpenAI batch analysis)
+                        analysis = contact_finder.batch_analyze_companies([company]).get(company, {})
+                        linkedin_identifier = analysis.get('linkedin_identifier', company.lower().replace(" ", "-"))
+                        tracker.save_linkedin_resolution(company, linkedin_identifier)
+                        
+                        # STEP 3: RapidAPI Analysis
+                        description = job.get('description') or job.get('job_level') or ''
+                        result = contact_finder.find_contacts(
                             company=company,
-                            job_title=job_title,
-                            employee_roles=employee_roles,
+                            linkedin_identifier=linkedin_identifier,
+                            role_hint=job_title,
+                            keywords=job_scraper.extract_keywords(description),
                             company_website=domain
                         )
                         
-                        if hunter_emails:
-                            await log_to_supabase(batch_id, f"✅ Found {len(hunter_emails)} Hunter.io emails for {company}", "success", company, job_title, job_url, "hunter_success")
-                            tracker.save_hunter_emails(company, job_title, job_url, hunter_emails)
-                        else:
-                            await log_to_supabase(batch_id, f"⚠️ No Hunter.io emails found for {company}", "warning", company, job_title, job_url, "hunter_no_emails")
-                            tracker.save_hunter_emails(company, job_title, job_url, [])
-                            
-                    except Exception as e:
-                        await log_to_supabase(batch_id, f"❌ Hunter.io error for {company}: {str(e)}", "error", company, job_title, job_url, "hunter_error")
-                        tracker.save_hunter_emails(company, job_title, job_url, [], error=str(e))
-                
-                # STEP 5: Instantly.ai (if requested and emails found)
-                campaign_id = None
-                if request.create_campaigns and hunter_emails:
-                    await log_to_supabase(batch_id, f"🚀 Creating Instantly campaign for {company}", "info", company, job_title, job_url, "instantly_start")
-                    try:
-                        # Create leads from Hunter.io emails
-                        leads = []
-                        for email in hunter_emails:
-                            lead = {
-                                "name": "Hiring Manager",
-                                "email": email,
-                                "company": company,
-                                "job_title": job_title,
-                                "job_url": job_url,
-                                "title": "Hiring Manager",
-                                "company_website": domain,
-                                "score": 0.8,
-                                "hunter_emails": hunter_emails
-                            }
-                            leads.append(lead)
+                        contacts, has_ta_team, employee_roles, company_found = result
+                        await log_to_supabase(batch_id, f"📊 Found {len(contacts)} contacts, TA team: {has_ta_team}", "info", company, job_title, job_url, "contact_analysis")
+                        tracker.save_rapidapi_analysis(company, has_ta_team, contacts, employee_roles, company_found)
                         
-                        # Create campaign
-                        campaign_name = request.campaign_name or f"Immediate_{company.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                        campaign_id = instantly_manager.create_recruiting_campaign(
-                            leads=leads,
-                            campaign_name=campaign_name
+                        # STEP 4: Hunter.io (if no TA team and company found)
+                        hunter_emails = []
+                        if not has_ta_team and company_found and domain:
+                            await log_to_supabase(batch_id, f"📡 Attempting Hunter.io lookup for: {company}", "info", company, job_title, job_url, "hunter_lookup")
+                            try:
+                                hunter_emails = contact_finder.find_hunter_emails_for_target_company(
+                                    company=company,
+                                    job_title=job_title,
+                                    employee_roles=employee_roles,
+                                    company_website=domain
+                                )
+                                
+                                if hunter_emails:
+                                    await log_to_supabase(batch_id, f"✅ Found {len(hunter_emails)} Hunter.io emails for {company}", "success", company, job_title, job_url, "hunter_success")
+                                    tracker.save_hunter_emails(company, job_title, job_url, hunter_emails)
+                                else:
+                                    await log_to_supabase(batch_id, f"⚠️ No Hunter.io emails found for {company}", "warning", company, job_title, job_url, "hunter_no_emails")
+                                    tracker.save_hunter_emails(company, job_title, job_url, [])
+                                    
+                            except Exception as e:
+                                await log_to_supabase(batch_id, f"❌ Hunter.io error for {company}: {str(e)}", "error", company, job_title, job_url, "hunter_error")
+                                tracker.save_hunter_emails(company, job_title, job_url, [], error=str(e))
+                        
+                        # STEP 5: Instantly.ai (if requested and emails found)
+                        campaign_id = None
+                        if request.create_campaigns and hunter_emails:
+                            await log_to_supabase(batch_id, f"🚀 Creating Instantly campaign for {company}", "info", company, job_title, job_url, "instantly_start")
+                            try:
+                                # Create leads from Hunter.io emails
+                                leads = []
+                                for email in hunter_emails:
+                                    lead = {
+                                        "name": "Hiring Manager",
+                                        "email": email,
+                                        "company": company,
+                                        "job_title": job_title,
+                                        "job_url": job_url,
+                                        "title": "Hiring Manager",
+                                        "company_website": domain,
+                                        "score": 0.8,
+                                        "hunter_emails": hunter_emails
+                                    }
+                                    leads.append(lead)
+                                
+                                # Create campaign
+                                campaign_name = request.campaign_name or f"Immediate_{company.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                                campaign_id = instantly_manager.create_recruiting_campaign(
+                                    leads=leads,
+                                    campaign_name=campaign_name
+                                )
+                                
+                                if campaign_id:
+                                    campaigns_created.append(campaign_id)
+                                    leads_added += len(hunter_emails)
+                                    await log_to_supabase(batch_id, f"✅ Created Instantly campaign for {company}: {campaign_name} (ID: {campaign_id})", "success", company, job_title, job_url, "instantly_success")
+                                    tracker.save_instantly_campaign(company, campaign_id, campaign_name, len(hunter_emails))
+                                else:
+                                    await log_to_supabase(batch_id, f"❌ Failed to create Instantly campaign for {company}", "error", company, job_title, job_url, "instantly_error")
+                                    tracker.save_instantly_campaign(company, error="Campaign creation failed")
+                                    
+                            except Exception as e:
+                                await log_to_supabase(batch_id, f"❌ Error creating Instantly campaign for {company}: {str(e)}", "error", company, job_title, job_url, "instantly_error")
+                                tracker.save_instantly_campaign(company, error=str(e))
+                        
+                        # Create company analysis record
+                        recommendation = "SKIP - Has TA team" if has_ta_team else "PROCESS - Target company"
+                        company_analysis = {
+                            "company": company,
+                            "job_title": job_title,
+                            "job_url": job_url,
+                            "has_ta_team": has_ta_team,
+                            "contacts_found": len(contacts),
+                            "top_contacts": contacts[:5],
+                            "hunter_emails": hunter_emails,
+                            "employee_roles": employee_roles,
+                            "company_website": domain,
+                            "company_found": company_found,
+                            "recommendation": recommendation,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        companies_analyzed.append(company_analysis)
+                        
+                        # Save company processing summary
+                        tracker.save_company_summary(
+                            company=company,
+                            job_title=job_title,
+                            job_url=job_url,
+                            domain_found=bool(domain),
+                            linkedin_resolved=True,
+                            rapidapi_analyzed=True,
+                            hunter_emails_found=bool(hunter_emails),
+                            instantly_campaign_created=bool(campaign_id),
+                            final_recommendation=recommendation
                         )
                         
-                        if campaign_id:
-                            campaigns_created.append(campaign_id)
-                            leads_added += len(hunter_emails)
-                            await log_to_supabase(batch_id, f"✅ Created Instantly campaign for {company}: {campaign_name} (ID: {campaign_id})", "success", company, job_title, job_url, "instantly_success")
-                            tracker.save_instantly_campaign(company, campaign_id, campaign_name, len(hunter_emails))
-                        else:
-                            await log_to_supabase(batch_id, f"❌ Failed to create Instantly campaign for {company}", "error", company, job_title, job_url, "instantly_error")
-                            tracker.save_instantly_campaign(company, error="Campaign creation failed")
-                            
+                        await log_to_supabase(batch_id, f"✅ Completed analysis for {company}: {recommendation}", "success", company, job_title, job_url, "company_analysis_complete")
+                        
+                        # Mark as processed
+                        processed_companies.add(company)
+                        memory_manager.mark_job_processed(job_fingerprint)
+                        processed_count += 1
+                        
+                        city_companies_processed += 1
+                        
                     except Exception as e:
-                        await log_to_supabase(batch_id, f"❌ Error creating Instantly campaign for {company}: {str(e)}", "error", company, job_title, job_url, "instantly_error")
-                        tracker.save_instantly_campaign(company, error=str(e))
+                        logger.error(f"Error analyzing {company}: {e}")
+                        await log_to_supabase(batch_id, f"❌ Error analyzing {company}: {str(e)}", "error", company, job_title, job_url, "company_error")
+                        
+                        # Save error summary
+                        tracker.save_company_summary(
+                            company=company,
+                            job_title=job_title,
+                            job_url=job_url,
+                            domain_found=False,
+                            linkedin_resolved=False,
+                            rapidapi_analyzed=False,
+                            hunter_emails_found=False,
+                            instantly_campaign_created=False,
+                            final_recommendation=f"ERROR - {str(e)}",
+                            error=str(e)
+                        )
+                        
+                        memory_manager.mark_job_processed(job_fingerprint)
+                        continue
                 
-                # Create company analysis record
-                recommendation = "SKIP - Has TA team" if has_ta_team else "PROCESS - Target company"
-                company_analysis = {
-                    "company": company,
-                    "job_title": job_title,
-                    "job_url": job_url,
-                    "has_ta_team": has_ta_team,
-                    "contacts_found": len(contacts),
-                    "top_contacts": contacts[:5],
-                    "hunter_emails": hunter_emails,
-                    "employee_roles": employee_roles,
-                    "company_website": domain,
-                    "company_found": company_found,
-                    "recommendation": recommendation,
-                    "timestamp": datetime.now().isoformat()
-                }
-                companies_analyzed.append(company_analysis)
-                
-                # Save company processing summary
-                tracker.save_company_summary(
-                    company=company,
-                    job_title=job_title,
-                    job_url=job_url,
-                    domain_found=bool(domain),
-                    linkedin_resolved=True,
-                    rapidapi_analyzed=True,
-                    hunter_emails_found=bool(hunter_emails),
-                    instantly_campaign_created=bool(campaign_id),
-                    final_recommendation=recommendation
-                )
-                
-                await log_to_supabase(batch_id, f"✅ Completed analysis for {company}: {recommendation}", "success", company, job_title, job_url, "company_analysis_complete")
-                
-                # Mark as processed
-                processed_companies.add(company)
-                memory_manager.mark_job_processed(job_fingerprint)
-                processed_count += 1
-                
-                # Rate limiting: Wait between companies
-                if processed_count % 3 == 0:  # Every 3 companies
-                    logger.info("Batch complete. Waiting 60 seconds before next batch...")
-                    await log_to_supabase(batch_id, "⏳ Rate limiting: Waiting 60 seconds before next batch...", "info")
-                    time.sleep(60)
+                # Log city completion
+                await log_to_supabase(batch_id, f"✅ Completed {city}: {city_companies_processed} companies processed", "success")
                 
             except Exception as e:
-                logger.error(f"Error analyzing {company}: {e}")
-                await log_to_supabase(batch_id, f"❌ Error analyzing {company}: {str(e)}", "error", company, job_title, job_url, "company_error")
-                
-                # Save error summary
-                tracker.save_company_summary(
-                    company=company,
-                    job_title=job_title,
-                    job_url=job_url,
-                    domain_found=False,
-                    linkedin_resolved=False,
-                    rapidapi_analyzed=False,
-                    hunter_emails_found=False,
-                    instantly_campaign_created=False,
-                    final_recommendation=f"ERROR - {str(e)}",
-                    error=str(e)
-                )
-                
-                memory_manager.mark_job_processed(job_fingerprint)
+                logger.error(f"Error processing city {city}: {e}")
+                await log_to_supabase(batch_id, f"❌ Error processing city {city}: {str(e)}", "error")
                 continue
+            
+            # Rate limiting: Wait between cities
+            if city != job_scraper.us_cities[:10][-1]:  # Not the last city
+                await log_to_supabase(batch_id, "⏳ Rate limiting: Waiting 30 seconds before next city...", "info")
+                time.sleep(30)
         
         # Final summary logging
         logger.info(f"📊 Hunter.io Summary: {hunter_attempts} attempts, {hunter_hits} emails found")
