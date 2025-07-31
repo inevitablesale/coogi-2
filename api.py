@@ -591,6 +591,15 @@ async def search_jobs(request: JobSearchRequest):
                                                     campaigns_created.append(campaign_id)
                                                     leads_added += len(hunter_emails)
                                                     logger.info(f"✅ Immediately created Instantly campaign for {company}: {campaign_name} (ID: {campaign_id})")
+                                                    
+                                                    # Move leads to the campaign
+                                                    lead_ids = [lead.get('id') for lead in leads if lead.get('id')]
+                                                    if lead_ids:
+                                                        success = instantly_manager.move_leads_to_campaign(lead_ids, campaign_id)
+                                                        if success:
+                                                            logger.info(f"✅ Moved {len(lead_ids)} leads to campaign {campaign_id}")
+                                                        else:
+                                                            logger.error(f"❌ Failed to move leads to campaign {campaign_id}")
                                                 else:
                                                     logger.error(f"❌ Failed to immediately create Instantly campaign for {company}")
                                                     
@@ -1895,6 +1904,42 @@ async def get_instantly_campaign_steps_analytics(campaign_id: str, start_date: s
         return {"campaign_id": campaign_id, "steps_analytics": steps_analytics}
     except Exception as e:
         logger.error(f"Error fetching Instantly campaign steps analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/instantly-leads/move")
+async def move_leads_to_campaign(lead_ids: List[str], campaign_id: str):
+    """Move leads to a specific campaign"""
+    try:
+        success = instantly_manager.move_leads_to_campaign(lead_ids, campaign_id)
+        if success:
+            return {"message": f"Successfully moved {len(lead_ids)} leads to campaign {campaign_id}"}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to move leads to campaign")
+    except Exception as e:
+        logger.error(f"Error moving leads to campaign: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/instantly-lead-lists")
+async def get_instantly_lead_lists():
+    """Get all lead lists"""
+    try:
+        lead_lists = instantly_manager.get_lead_lists()
+        return {"lead_lists": lead_lists}
+    except Exception as e:
+        logger.error(f"Error fetching Instantly lead lists: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/instantly-lead-lists")
+async def create_instantly_lead_list(name: str, description: str = ""):
+    """Create a new lead list"""
+    try:
+        lead_list_id = instantly_manager.create_lead_list(name, description)
+        if lead_list_id:
+            return {"message": f"Successfully created lead list: {name}", "lead_list_id": lead_list_id}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to create lead list")
+    except Exception as e:
+        logger.error(f"Error creating Instantly lead list: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

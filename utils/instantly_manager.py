@@ -25,57 +25,135 @@ class InstantlyManager:
         ]
         self.current_domain_index = 0
         
-    def create_lead_list(self, name: str, leads: List[Dict[str, Any]]) -> Optional[str]:
-        """
-        Create a lead list in Instantly
-        Returns lead list ID if successful
-        """
-        if not self.api_key:
-            logger.warning("No Instantly API key provided")
-            return None
-            
+    def create_lead_list(self, name: str, description: str = "") -> Optional[str]:
+        """Create a new lead list"""
         try:
             url = f"{self.base_url}/api/v2/lead-lists"
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Connection": "keep-alive",
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin"
+                "Content-Type": "application/json"
             }
             
-            # Create the lead list
-            list_payload = {
-                "name": name
+            payload = {
+                "name": name,
+                "description": description
             }
             
-            response = requests.post(url, headers=headers, json=list_payload, timeout=30)
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
             
             if response.status_code != 200:
-                logger.error(f"❌ Failed to create lead list: {response.status_code} - {response.text}")
+                logger.error(f"Failed to create lead list: {response.status_code}")
                 return None
                 
-            data = response.json()
-            lead_list_id = data.get("id")
+            result = response.json()
+            lead_list_id = result.get('id')
             logger.info(f"✅ Created lead list: {name} (ID: {lead_list_id})")
-            
-            # Add leads to the list
-            if leads and lead_list_id:
-                success = self.add_leads_to_list(lead_list_id, leads)
-                if success:
-                    logger.info(f"✅ Added {len(leads)} leads to list {lead_list_id}")
-                    return lead_list_id
-            
             return lead_list_id
-                
+            
         except Exception as e:
-            logger.error(f"❌ Error creating lead list: {e}")
+            logger.error(f"Error creating lead list: {e}")
             return None
+
+    def get_campaign(self, campaign_id: str) -> Optional[Dict[str, Any]]:
+        """Get specific campaign details"""
+        try:
+            url = f"{self.base_url}/api/v2/campaigns/{campaign_id}"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to get campaign {campaign_id}: {response.status_code}")
+                return None
+                
+            campaign = response.json()
+            
+            # Add analytics data
+            analytics = self.get_campaign_analytics(campaign_id)
+            if analytics:
+                campaign.update(analytics)
+                
+            return campaign
+            
+        except Exception as e:
+            logger.error(f"Error getting campaign {campaign_id}: {e}")
+            return None
+
+    def activate_campaign(self, campaign_id: str) -> bool:
+        """Activate a campaign"""
+        try:
+            url = f"{self.base_url}/api/v2/campaigns/{campaign_id}/activate"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to activate campaign {campaign_id}: {response.status_code}")
+                return False
+                
+            logger.info(f"✅ Activated campaign {campaign_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error activating campaign {campaign_id}: {e}")
+            return False
+
+    def pause_campaign(self, campaign_id: str) -> bool:
+        """Pause a campaign"""
+        try:
+            url = f"{self.base_url}/api/v2/campaigns/{campaign_id}/pause"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to pause campaign {campaign_id}: {response.status_code}")
+                return False
+                
+            logger.info(f"✅ Paused campaign {campaign_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error pausing campaign {campaign_id}: {e}")
+            return False
+
+    def get_all_leads(self) -> List[Dict[str, Any]]:
+        """Get all leads for dashboard display"""
+        try:
+            url = f"{self.base_url}/api/v2/leads"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to get leads: {response.status_code}")
+                return []
+                
+            leads = response.json()
+            
+            # Enhance with additional data
+            for lead in leads:
+                lead['score'] = lead.get('score', 0.5)
+                lead['status'] = lead.get('status', 'unknown')
+                lead['campaign_name'] = lead.get('campaign_name', 'N/A')
+                
+            return leads
+            
+        except Exception as e:
+            logger.error(f"Error getting leads: {e}")
+            return []
     
     def add_leads_to_list(self, lead_list_id: str, leads: List[Dict[str, Any]]) -> bool:
         """
@@ -972,106 +1050,32 @@ Contact: {{contact_title}}
             logger.error(f"Error getting campaign steps analytics {campaign_id}: {e}")
             return []
 
-    def get_campaign(self, campaign_id: str) -> Optional[Dict[str, Any]]:
-        """Get specific campaign details"""
+    def move_leads_to_campaign(self, lead_ids: List[str], campaign_id: str) -> bool:
+        """Move leads into a specific campaign"""
         try:
-            url = f"{self.base_url}/api/v2/campaigns/{campaign_id}"
+            url = f"{self.base_url}/api/v2/leads/move"
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
             
-            response = requests.get(url, headers=headers, timeout=30)
-            
-            if response.status_code != 200:
-                logger.error(f"Failed to get campaign {campaign_id}: {response.status_code}")
-                return None
-                
-            campaign = response.json()
-            
-            # Add analytics data
-            analytics = self.get_campaign_analytics(campaign_id)
-            if analytics:
-                campaign.update(analytics)
-                
-            return campaign
-            
-        except Exception as e:
-            logger.error(f"Error getting campaign {campaign_id}: {e}")
-            return None
-
-    def activate_campaign(self, campaign_id: str) -> bool:
-        """Activate a campaign"""
-        try:
-            url = f"{self.base_url}/api/v2/campaigns/{campaign_id}/activate"
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
+            payload = {
+                "lead_ids": lead_ids,
+                "campaign_id": campaign_id
             }
             
-            response = requests.post(url, headers=headers, timeout=30)
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
             
             if response.status_code != 200:
-                logger.error(f"Failed to activate campaign {campaign_id}: {response.status_code}")
+                logger.error(f"Failed to move leads to campaign {campaign_id}: {response.status_code}")
                 return False
                 
-            logger.info(f"✅ Activated campaign {campaign_id}")
+            logger.info(f"✅ Moved {len(lead_ids)} leads to campaign {campaign_id}")
             return True
             
         except Exception as e:
-            logger.error(f"Error activating campaign {campaign_id}: {e}")
+            logger.error(f"Error moving leads to campaign {campaign_id}: {e}")
             return False
-
-    def pause_campaign(self, campaign_id: str) -> bool:
-        """Pause a campaign"""
-        try:
-            url = f"{self.base_url}/api/v2/campaigns/{campaign_id}/pause"
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
-            
-            response = requests.post(url, headers=headers, timeout=30)
-            
-            if response.status_code != 200:
-                logger.error(f"Failed to pause campaign {campaign_id}: {response.status_code}")
-                return False
-                
-            logger.info(f"✅ Paused campaign {campaign_id}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error pausing campaign {campaign_id}: {e}")
-            return False
-
-    def get_all_leads(self) -> List[Dict[str, Any]]:
-        """Get all leads for dashboard display"""
-        try:
-            url = f"{self.base_url}/api/v2/leads"
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
-            
-            response = requests.get(url, headers=headers, timeout=30)
-            
-            if response.status_code != 200:
-                logger.error(f"Failed to get leads: {response.status_code}")
-                return []
-                
-            leads = response.json()
-            
-            # Enhance with additional data
-            for lead in leads:
-                lead['score'] = lead.get('score', 0.5)
-                lead['status'] = lead.get('status', 'unknown')
-                lead['campaign_name'] = lead.get('campaign_name', 'N/A')
-                
-            return leads
-            
-        except Exception as e:
-            logger.error(f"Error getting leads: {e}")
-            return []
 
     def get_lead(self, lead_id: str) -> Optional[Dict[str, Any]]:
         """Get specific lead details"""
