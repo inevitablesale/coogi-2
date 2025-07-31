@@ -1867,6 +1867,36 @@ async def get_instantly_stats():
         logger.error(f"Error fetching Instantly stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/instantly-analytics/overview")
+async def get_instantly_analytics_overview():
+    """Get Instantly.ai analytics overview"""
+    try:
+        overview = instantly_manager.get_campaign_analytics_overview()
+        return overview
+    except Exception as e:
+        logger.error(f"Error fetching Instantly analytics overview: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/instantly-analytics/daily")
+async def get_instantly_daily_analytics(start_date: str = None, end_date: str = None):
+    """Get Instantly.ai daily analytics"""
+    try:
+        daily_analytics = instantly_manager.get_daily_campaign_analytics(start_date, end_date)
+        return {"daily_analytics": daily_analytics}
+    except Exception as e:
+        logger.error(f"Error fetching Instantly daily analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/instantly-analytics/campaign/{campaign_id}/steps")
+async def get_instantly_campaign_steps_analytics(campaign_id: str, start_date: str = None, end_date: str = None):
+    """Get step-by-step analytics for a specific campaign"""
+    try:
+        steps_analytics = instantly_manager.get_campaign_steps_analytics(campaign_id, start_date, end_date)
+        return {"campaign_id": campaign_id, "steps_analytics": steps_analytics}
+    except Exception as e:
+        logger.error(f"Error fetching Instantly campaign steps analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

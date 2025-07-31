@@ -568,7 +568,7 @@ Contact: {{contact_title}}
             company = lead.get("company", "").lower()
             
             # Enhanced company type classification with intelligent categorization
-            company_type = self._classify_company_type(company, job_title)
+            company_type = self._classify_company_type(company, job_title=lead.get("job_title", ""))
             
             if company_type not in leads_by_company_type:
                 leads_by_company_type[company_type] = []
@@ -853,17 +853,123 @@ Contact: {{contact_title}}
                 
             campaigns = response.json()
             
-            # Enhance with additional data
+            # Get analytics for each campaign
             for campaign in campaigns:
-                campaign['leads_count'] = campaign.get('leads_count', 0)
-                campaign['open_rate'] = campaign.get('open_rate', 0)
-                campaign['reply_rate'] = campaign.get('reply_rate', 0)
-                campaign['click_rate'] = campaign.get('click_rate', 0)
+                campaign_id = campaign.get('id')
+                if campaign_id:
+                    analytics = self.get_campaign_analytics(campaign_id)
+                    if analytics:
+                        campaign.update(analytics)
                 
             return campaigns
             
         except Exception as e:
             logger.error(f"Error getting campaigns: {e}")
+            return []
+
+    def get_campaign_analytics(self, campaign_id: str) -> Optional[Dict[str, Any]]:
+        """Get detailed analytics for a specific campaign"""
+        try:
+            url = f"{self.base_url}/api/v2/campaigns/analytics"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            params = {
+                "id": campaign_id,
+                "exclude_total_leads_count": False
+            }
+            
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to get campaign analytics {campaign_id}: {response.status_code}")
+                return None
+                
+            analytics = response.json()
+            if analytics and len(analytics) > 0:
+                return analytics[0]  # Return first (and only) campaign analytics
+                
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting campaign analytics {campaign_id}: {e}")
+            return None
+
+    def get_campaign_analytics_overview(self) -> Dict[str, Any]:
+        """Get overview analytics for all campaigns"""
+        try:
+            url = f"{self.base_url}/api/v2/campaigns/analytics/overview"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to get campaign analytics overview: {response.status_code}")
+                return {}
+                
+            return response.json()
+            
+        except Exception as e:
+            logger.error(f"Error getting campaign analytics overview: {e}")
+            return {}
+
+    def get_daily_campaign_analytics(self, start_date: str = None, end_date: str = None) -> List[Dict[str, Any]]:
+        """Get daily analytics for campaigns"""
+        try:
+            url = f"{self.base_url}/api/v2/campaigns/analytics/daily"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            params = {}
+            if start_date:
+                params["start_date"] = start_date
+            if end_date:
+                params["end_date"] = end_date
+            
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to get daily campaign analytics: {response.status_code}")
+                return []
+                
+            return response.json()
+            
+        except Exception as e:
+            logger.error(f"Error getting daily campaign analytics: {e}")
+            return []
+
+    def get_campaign_steps_analytics(self, campaign_id: str, start_date: str = None, end_date: str = None) -> List[Dict[str, Any]]:
+        """Get step-by-step analytics for a campaign"""
+        try:
+            url = f"{self.base_url}/api/v2/campaigns/analytics/steps"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            params = {"campaign_id": campaign_id}
+            if start_date:
+                params["start_date"] = start_date
+            if end_date:
+                params["end_date"] = end_date
+            
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to get campaign steps analytics {campaign_id}: {response.status_code}")
+                return []
+                
+            return response.json()
+            
+        except Exception as e:
+            logger.error(f"Error getting campaign steps analytics {campaign_id}: {e}")
             return []
 
     def get_campaign(self, campaign_id: str) -> Optional[Dict[str, Any]]:
@@ -881,7 +987,14 @@ Contact: {{contact_title}}
                 logger.error(f"Failed to get campaign {campaign_id}: {response.status_code}")
                 return None
                 
-            return response.json()
+            campaign = response.json()
+            
+            # Add analytics data
+            analytics = self.get_campaign_analytics(campaign_id)
+            if analytics:
+                campaign.update(analytics)
+                
+            return campaign
             
         except Exception as e:
             logger.error(f"Error getting campaign {campaign_id}: {e}")
@@ -1004,26 +1117,43 @@ Contact: {{contact_title}}
             return False
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get Instantly.ai statistics for dashboard"""
+        """Get Instantly.ai statistics for dashboard using proper analytics endpoints"""
         try:
-            # Get campaigns and leads
+            # Get overview analytics
+            overview = self.get_campaign_analytics_overview()
+            
+            # Get campaigns with analytics
             campaigns = self.get_all_campaigns()
             leads = self.get_all_leads()
             
-            # Calculate stats
+            # Calculate stats from analytics data
             total_campaigns = len(campaigns)
             total_leads = len(leads)
-            active_campaigns = len([c for c in campaigns if c.get('status') == 'active'])
+            active_campaigns = len([c for c in campaigns if c.get('campaign_status') == 1])  # 1 = Active
             
-            # Calculate average open rate
-            open_rates = [c.get('open_rate', 0) for c in campaigns if c.get('open_rate')]
-            avg_open_rate = sum(open_rates) / len(open_rates) if open_rates else 0
+            # Calculate metrics from analytics
+            total_sent = sum([c.get('sent_count', 0) for c in campaigns])
+            total_opened = sum([c.get('opened_count', 0) for c in campaigns])
+            total_replied = sum([c.get('replied_count', 0) for c in campaigns])
+            total_clicked = sum([c.get('clicked_count', 0) for c in campaigns])
+            
+            # Calculate rates
+            avg_open_rate = (total_opened / total_sent * 100) if total_sent > 0 else 0
+            avg_reply_rate = (total_replied / total_sent * 100) if total_sent > 0 else 0
+            avg_click_rate = (total_clicked / total_sent * 100) if total_sent > 0 else 0
             
             return {
                 "total_campaigns": total_campaigns,
                 "total_leads": total_leads,
                 "active_campaigns": active_campaigns,
-                "avg_open_rate": avg_open_rate
+                "avg_open_rate": avg_open_rate,
+                "avg_reply_rate": avg_reply_rate,
+                "avg_click_rate": avg_click_rate,
+                "total_sent": total_sent,
+                "total_opened": total_opened,
+                "total_replied": total_replied,
+                "total_clicked": total_clicked,
+                "overview": overview
             }
             
         except Exception as e:
@@ -1032,5 +1162,12 @@ Contact: {{contact_title}}
                 "total_campaigns": 0,
                 "total_leads": 0,
                 "active_campaigns": 0,
-                "avg_open_rate": 0
+                "avg_open_rate": 0,
+                "avg_reply_rate": 0,
+                "avg_click_rate": 0,
+                "total_sent": 0,
+                "total_opened": 0,
+                "total_replied": 0,
+                "total_clicked": 0,
+                "overview": {}
             } 

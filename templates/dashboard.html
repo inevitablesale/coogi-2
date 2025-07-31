@@ -714,6 +714,14 @@
                     <div class="instantly-stat-value" id="avgOpenRate">0%</div>
                     <div class="instantly-stat-label">Avg Open Rate</div>
                 </div>
+                <div class="instantly-stat">
+                    <div class="instantly-stat-value" id="avgReplyRate">0%</div>
+                    <div class="instantly-stat-label">Avg Reply Rate</div>
+                </div>
+                <div class="instantly-stat">
+                    <div class="instantly-stat-value" id="avgClickRate">0%</div>
+                    <div class="instantly-stat-label">Avg Click Rate</div>
+                </div>
             </div>
             
             <div class="campaigns-grid" id="campaignsGrid">
@@ -1125,7 +1133,20 @@
             document.getElementById('totalCampaigns').textContent = stats.total_campaigns || 0;
             document.getElementById('totalLeads').textContent = stats.total_leads || 0;
             document.getElementById('activeCampaigns').textContent = stats.active_campaigns || 0;
-            document.getElementById('avgOpenRate').textContent = `${Math.round((stats.avg_open_rate || 0) * 100)}%`;
+            document.getElementById('avgOpenRate').textContent = `${Math.round(stats.avg_open_rate || 0)}%`;
+            document.getElementById('avgReplyRate').textContent = `${Math.round(stats.avg_reply_rate || 0)}%`;
+            document.getElementById('avgClickRate').textContent = `${Math.round(stats.avg_click_rate || 0)}%`;
+            
+            // Log additional analytics for debugging
+            if (stats.total_sent !== undefined) {
+                console.log(`Total Sent: ${stats.total_sent}`);
+            }
+            if (stats.total_opened !== undefined) {
+                console.log(`Total Opened: ${stats.total_opened}`);
+            }
+            if (stats.total_replied !== undefined) {
+                console.log(`Total Replied: ${stats.total_replied}`);
+            }
         }
 
         // Utility functions for Instantly
