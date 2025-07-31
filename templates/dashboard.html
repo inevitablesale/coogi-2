@@ -657,12 +657,12 @@
                 <form id="agentForm">
                     <div class="form-group">
                         <label for="query">Search Query</label>
-                        <input type="text" id="query" class="form-control" placeholder="e.g., software engineer, nurse, lawyer" required>
+                        <input type="text" id="query" name="query" class="form-control" placeholder="e.g., software engineer, nurse, lawyer" required>
                     </div>
 
                     <div class="form-group">
                         <label for="hoursOld">Jobs from last</label>
-                        <select id="hoursOld" class="form-control">
+                        <select id="hoursOld" name="hoursOld" class="form-control">
                             <option value="1">1 hour</option>
                             <option value="24" selected>24 hours</option>
                             <option value="168">1 week</option>
@@ -917,6 +917,13 @@
                 if (!response.ok) {
                     const errorText = await response.text();
                     console.error('❌ Error response body:', errorText);
+                    console.error('❌ Full error details:', {
+                        status: response.status,
+                        statusText: response.statusText,
+                        url: response.url,
+                        headers: Object.fromEntries(response.headers.entries()),
+                        body: errorText
+                    });
                     throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
                 }
 
