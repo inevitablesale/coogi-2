@@ -3,10 +3,6 @@ import logging
 import json
 from typing import Dict, Any, List
 from datetime import datetime
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 

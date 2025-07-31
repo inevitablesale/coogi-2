@@ -1,10 +1,6 @@
 import os
 import logging
 from typing import Dict, Any, Optional
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 

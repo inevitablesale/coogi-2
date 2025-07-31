@@ -4,9 +4,6 @@ import requests
 import json
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from dotenv import load_dotenv
-
-load_dotenv()
 logger = logging.getLogger(__name__)
 
 class InstantlyManager:
