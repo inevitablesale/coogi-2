@@ -163,6 +163,23 @@ async def get_dashboard():
         </html>
         """, status_code=404)
 
+@app.get("/agent-detail", response_class=HTMLResponse)
+async def get_agent_detail():
+    """Serve the agent detail page"""
+    try:
+        with open("templates/agent_detail.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="""
+        <html>
+        <head><title>Agent Detail - MindGlimpse</title></head>
+        <body>
+            <h1>Agent Detail Not Found</h1>
+            <p>The agent detail template file is missing. Please ensure templates/agent_detail.html exists.</p>
+        </body>
+        </html>
+        """, status_code=404)
+
 # Initialize services
 job_scraper = JobScraper()
 contact_finder = ContactFinder()

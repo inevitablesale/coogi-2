@@ -953,12 +953,12 @@
                 const seconds = duration % 60;
                 
                 return `
-                    <div class="agent-card">
+                    <div class="agent-card" onclick="viewAgentDetail('${batchId}')" style="cursor: pointer;">
                         <div class="agent-header">
                             <div class="agent-title">Agent: ${agent.query}</div>
                             <div class="agent-status">
                                 <div class="status-indicator status-${agent.status}"></div>
-                                <button onclick="cancelAgent('${batchId}')" class="btn btn-danger">🚫 Kill</button>
+                                <button onclick="event.stopPropagation(); cancelAgent('${batchId}')" class="btn btn-danger">🚫 Kill</button>
                             </div>
                         </div>
                         
@@ -979,6 +979,10 @@
                         
                         <div class="agent-logs" id="agent-logs-${batchId}">
                             <div class="log-entry log-info">Loading logs...</div>
+                        </div>
+                        
+                        <div style="text-align: center; margin-top: 10px; color: #718096; font-size: 0.875rem;">
+                            👆 Click to view detailed results
                         </div>
                     </div>
                 `;
@@ -1087,6 +1091,11 @@
                 clearInterval(interval);
                 statusIntervals.delete(batchId);
             }
+        }
+
+        // View agent detail page
+        function viewAgentDetail(batchId) {
+            window.open(`/agent-detail?batch_id=${batchId}`, '_blank');
         }
 
         // Update dashboard
