@@ -1,1 +1,1 @@
-web: bash start_debug.sh 
+web: python3 start_server.py 
