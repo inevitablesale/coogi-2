@@ -376,16 +376,25 @@ class JobScraper:
                     "verbose": kwargs.get('verbose', 1)
                 }
                 
-                # Get a proxy for the API call (non-blocking)
-                proxy_dict = self.proxy_manager.get_next_proxy()
-                if not proxy_dict:
-                    logger.info("🌐 Making direct JobSpy API call (no proxies available)")
-                    proxy_dict = None
-                else:
-                    proxy_info = f" via proxy {list(proxy_dict.values())[0]}"
-                    logger.info(f"🌐 Calling your JobSpy API for {search_term} in {location}{proxy_info}")
+                # Wait for a proxy to be available, then use it
+                logger.info(f"🌐 Waiting for proxy for {search_term} in {location}...")
+                proxy_dict = None
+                max_wait_time = 30  # Wait up to 30 seconds for a proxy
+                start_time = time.time()
                 
-                logger.info(f"🌐 Making JobSpy API request to {url}")
+                while not proxy_dict and (time.time() - start_time) < max_wait_time:
+                    proxy_dict = self.proxy_manager.get_next_proxy()
+                    if not proxy_dict:
+                        logger.info(f"⏳ Waiting for proxy... ({int(time.time() - start_time)}s)")
+                        time.sleep(2)  # Wait 2 seconds before checking again
+                
+                if proxy_dict:
+                    proxy_info = f" via proxy {list(proxy_dict.values())[0]}"
+                    logger.info(f"🌐 Making JobSpy API call for {search_term} in {location}{proxy_info}")
+                else:
+                    logger.warning(f"⚠️  No proxy available after {max_wait_time}s, making direct call")
+                    proxy_dict = None
+                
                 response = requests.get(url, params=params, proxies=proxy_dict, timeout=30)
                 logger.info(f"🌐 JobSpy API response status: {response.status_code}")
                 
@@ -440,18 +449,14 @@ class JobScraper:
         return []
             
     def _find_company_domain(self, company_name: str) -> Optional[str]:
-        """Find company website domain using Clearout API with proxy rotation"""
+        """Find company website domain using Clearout API"""
         try:
             url = "https://api.clearout.io/public/companies/autocomplete"
             params = {"query": company_name}
             
-            # Get a proxy for the API call (non-blocking)
-            proxy_dict = self.proxy_manager.get_next_proxy()
-            if not proxy_dict:
-                logger.info("🌐 Making direct domain finding call (no proxies available)")
-                proxy_dict = None
-            
-            response = requests.get(url, params=params, proxies=proxy_dict, timeout=10)
+            # Make direct domain finding call (no proxies needed)
+            logger.info(f"🌐 Making domain finding call for {company_name}")
+            response = requests.get(url, params=params, timeout=10)
             
             if response.status_code == 200:
                 data = response.json()
@@ -475,8 +480,6 @@ class JobScraper:
             
         except Exception as e:
             logger.error(f"❌ Domain finding failed for {company_name}: {e}")
-            if proxy_dict:
-                self.proxy_manager.mark_proxy_failed(proxy_dict)
             return None
         
     def extract_keywords(self, job_description: str) -> List[str]:
