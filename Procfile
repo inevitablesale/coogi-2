@@ -1,1 +1,1 @@
-web: python run.py 
+web: bash debug_start.sh 
