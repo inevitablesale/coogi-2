@@ -1357,6 +1357,16 @@ async def receive_webhook_results(request: WebhookRequest):
 async def process_jobs_background(request: JobSearchRequest):
     """Process jobs in background and send results via webhook"""
     try:
+        # Debug logging
+        logger.info(f"🔍 Received request: {request}")
+        logger.info(f"🔍 Request query: {request.query}")
+        logger.info(f"🔍 Request hours_old: {request.hours_old}")
+        logger.info(f"🔍 Request enforce_salary: {request.enforce_salary}")
+        logger.info(f"🔍 Request auto_generate_messages: {request.auto_generate_messages}")
+        logger.info(f"🔍 Request create_campaigns: {request.create_campaigns}")
+        logger.info(f"🔍 Request campaign_name: {request.campaign_name}")
+        logger.info(f"🔍 Request min_score: {request.min_score}")
+        
         # Generate batch ID
         batch_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
