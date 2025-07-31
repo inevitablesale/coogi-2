@@ -248,7 +248,7 @@
         <div class="main-content">
             <!-- Search Form -->
             <div class="search-section">
-                <h2>🔍 Start Job Search</h2>
+                <h2>🔍 Multi-Agent Job Search</h2>
                 <form id="searchForm">
                     <div class="form-group">
                         <label for="query">Search Query:</label>
@@ -271,19 +271,16 @@
                     </div>
 
                     <button type="submit" class="btn" id="startSearchBtn">
-                        🚀 Start Search
-                    </button>
-                    <button type="button" class="btn btn-danger hidden" id="cancelSearchBtn">
-                        🚫 Cancel Search
+                        🚀 Start New Agent
                     </button>
                 </form>
             </div>
 
-            <!-- Status Section -->
+            <!-- Active Agents Section -->
             <div class="status-section">
-                <h2>📊 Search Status</h2>
-                <div id="statusContent">
-                    <p>No active searches. Start a search to see status here.</p>
+                <h2>🤖 Active Agents</h2>
+                <div id="agentsContent">
+                    <p>No active agents. Start a search to see agents here.</p>
                 </div>
             </div>
 
@@ -298,18 +295,19 @@
     </div>
 
     <script>
-        let currentBatchId = null;
-        let statusInterval = null;
+        let activeAgents = new Map(); // batch_id -> agent data
+        let statusIntervals = new Map(); // batch_id -> interval
 
         // API Base URL
         const API_BASE = 'https://coogi-2-production.up.railway.app';
 
         // Add log entry
-        function addLog(message, type = 'info') {
+        function addLog(message, type = 'info', agentId = null) {
             const logContent = document.getElementById('logContent');
             const logEntry = document.createElement('div');
             logEntry.className = `log-entry log-${type}`;
-            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            const agentPrefix = agentId ? `[Agent ${agentId}] ` : '';
+            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${agentPrefix}${message}`;
             logContent.appendChild(logEntry);
             logContent.scrollTop = logContent.scrollHeight;
         }
@@ -326,10 +324,11 @@
             setTimeout(() => alert.remove(), 5000);
         }
 
-        // Start search
-        async function startSearch(formData) {
+        // Start new agent
+        async function startAgent(formData) {
             try {
-                addLog('Starting job search...', 'info');
+                const query = formData.get('query');
+                addLog(`Starting new agent for: ${query}`, 'info');
                 
                 const response = await fetch(`${API_BASE}/process-jobs-background`, {
                     method: 'POST',
@@ -337,7 +336,7 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        query: formData.get('query'),
+                        query: query,
                         hours_old: parseInt(formData.get('hoursOld')),
                         create_campaigns: formData.get('createCampaigns') === 'on'
                     })
@@ -348,32 +347,41 @@
                 }
 
                 const result = await response.json();
-                currentBatchId = result.batch_id;
+                const batchId = result.batch_id;
                 
-                addLog(`Search started with batch ID: ${currentBatchId}`, 'success');
-                showAlert(`Search started successfully! Batch ID: ${currentBatchId}`, 'success');
+                // Store agent data
+                activeAgents.set(batchId, {
+                    query: query,
+                    batchId: batchId,
+                    status: 'processing',
+                    startTime: new Date(),
+                    jobsFound: result.jobs_found || 0
+                });
                 
-                // Update UI
-                document.getElementById('startSearchBtn').classList.add('hidden');
-                document.getElementById('cancelSearchBtn').classList.remove('hidden');
+                addLog(`Agent started with batch ID: ${batchId}`, 'success', batchId);
+                showAlert(`Agent started successfully! Batch ID: ${batchId}`, 'success');
                 
-                // Start monitoring
-                startStatusMonitoring();
+                // Start monitoring this agent
+                startAgentMonitoring(batchId);
+                
+                // Update agents display
+                updateAgentsDisplay();
+                
+                // Clear form
+                document.getElementById('searchForm').reset();
                 
             } catch (error) {
-                addLog(`Error starting search: ${error.message}`, 'error');
-                showAlert(`Error starting search: ${error.message}`, 'error');
+                addLog(`Error starting agent: ${error.message}`, 'error');
+                showAlert(`Error starting agent: ${error.message}`, 'error');
             }
         }
 
-        // Cancel search
-        async function cancelSearch() {
-            if (!currentBatchId) return;
-            
+        // Cancel specific agent
+        async function cancelAgent(batchId) {
             try {
-                addLog(`Cancelling search ${currentBatchId}...`, 'warning');
+                addLog(`Cancelling agent ${batchId}...`, 'warning', batchId);
                 
-                const response = await fetch(`${API_BASE}/cancel-search/${currentBatchId}`, {
+                const response = await fetch(`${API_BASE}/cancel-search/${batchId}`, {
                     method: 'POST'
                 });
 
@@ -382,77 +390,106 @@
                 }
 
                 const result = await response.json();
-                addLog(`Search cancelled: ${result.message}`, 'success');
-                showAlert('Search cancelled successfully!', 'success');
+                addLog(`Agent cancelled: ${result.message}`, 'success', batchId);
+                showAlert(`Agent cancelled successfully!`, 'success');
                 
-                // Update UI
-                document.getElementById('startSearchBtn').classList.remove('hidden');
-                document.getElementById('cancelSearchBtn').classList.add('hidden');
-                
-                // Stop monitoring
-                stopStatusMonitoring();
+                // Remove agent from tracking
+                activeAgents.delete(batchId);
+                stopAgentMonitoring(batchId);
+                updateAgentsDisplay();
                 
             } catch (error) {
-                addLog(`Error cancelling search: ${error.message}`, 'error');
-                showAlert(`Error cancelling search: ${error.message}`, 'error');
+                addLog(`Error cancelling agent: ${error.message}`, 'error', batchId);
+                showAlert(`Error cancelling agent: ${error.message}`, 'error');
             }
         }
 
-        // Monitor search status
-        async function checkSearchStatus() {
-            if (!currentBatchId) return;
-            
+        // Monitor specific agent
+        async function checkAgentStatus(batchId) {
             try {
-                const response = await fetch(`${API_BASE}/search-status/${currentBatchId}`);
+                const response = await fetch(`${API_BASE}/search-status/${batchId}`);
                 
                 if (response.ok) {
                     const status = await response.json();
-                    updateStatusDisplay(status);
+                    
+                    // Update agent data
+                    const agent = activeAgents.get(batchId);
+                    if (agent) {
+                        agent.status = status.status;
+                        agent.isCancelled = status.is_cancelled;
+                        
+                        // If completed or cancelled, remove from active agents
+                        if (status.status === 'completed' || status.is_cancelled) {
+                            activeAgents.delete(batchId);
+                            stopAgentMonitoring(batchId);
+                            addLog(`Agent ${batchId} finished`, 'info', batchId);
+                        }
+                        
+                        updateAgentsDisplay();
+                    }
                 }
             } catch (error) {
-                addLog(`Error checking status: ${error.message}`, 'error');
+                addLog(`Error checking agent status: ${error.message}`, 'error', batchId);
             }
         }
 
-        // Update status display
-        function updateStatusDisplay(status) {
-            const statusContent = document.getElementById('statusContent');
-            
-            const statusHtml = `
-                <div class="status-card">
-                    <h3>Current Search</h3>
-                    <p><strong>Batch ID:</strong> ${status.batch_id}</p>
-                    <p><strong>Status:</strong> 
-                        <span class="status-badge status-${status.status}">${status.status}</span>
-                    </p>
-                    <p><strong>Cancelled:</strong> ${status.is_cancelled ? 'Yes' : 'No'}</p>
-                </div>
-            `;
-            
-            statusContent.innerHTML = statusHtml;
+        // Start monitoring for specific agent
+        function startAgentMonitoring(batchId) {
+            const interval = setInterval(() => checkAgentStatus(batchId), 5000);
+            statusIntervals.set(batchId, interval);
         }
 
-        // Start status monitoring
-        function startStatusMonitoring() {
-            statusInterval = setInterval(checkSearchStatus, 5000); // Check every 5 seconds
-        }
-
-        // Stop status monitoring
-        function stopStatusMonitoring() {
-            if (statusInterval) {
-                clearInterval(statusInterval);
-                statusInterval = null;
+        // Stop monitoring for specific agent
+        function stopAgentMonitoring(batchId) {
+            const interval = statusIntervals.get(batchId);
+            if (interval) {
+                clearInterval(interval);
+                statusIntervals.delete(batchId);
             }
+        }
+
+        // Update agents display
+        function updateAgentsDisplay() {
+            const agentsContent = document.getElementById('agentsContent');
+            
+            if (activeAgents.size === 0) {
+                agentsContent.innerHTML = '<p>No active agents. Start a search to see agents here.</p>';
+                return;
+            }
+            
+            let agentsHtml = '<div class="status-grid">';
+            
+            activeAgents.forEach((agent, batchId) => {
+                const duration = Math.floor((new Date() - agent.startTime) / 1000);
+                const minutes = Math.floor(duration / 60);
+                const seconds = duration % 60;
+                
+                agentsHtml += `
+                    <div class="status-card">
+                        <h3>Agent: ${agent.query}</h3>
+                        <p><strong>Batch ID:</strong> ${batchId}</p>
+                        <p><strong>Status:</strong> 
+                            <span class="status-badge status-${agent.status}">${agent.status}</span>
+                        </p>
+                        <p><strong>Jobs Found:</strong> ${agent.jobsFound}</p>
+                        <p><strong>Runtime:</strong> ${minutes}m ${seconds}s</p>
+                        <button onclick="cancelAgent('${batchId}')" class="btn btn-danger" style="margin-top: 10px;">
+                            🚫 Kill Agent
+                        </button>
+                    </div>
+                `;
+            });
+            
+            agentsHtml += '</div>';
+            agentsContent.innerHTML = agentsHtml;
         }
 
         // Event listeners
         document.getElementById('searchForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
-            await startSearch(formData);
+            await startAgent(formData);
         });
-
-        document.getElementById('cancelSearchBtn').addEventListener('click', cancelSearch);
 
         // Check API health on load
         window.addEventListener('load', async () => {
