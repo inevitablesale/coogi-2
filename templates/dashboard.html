@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MindGlimpse Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #2d3748;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header .stats {
+            display: flex;
+            gap: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px 25px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: #718096;
+            margin-top: 5px;
+        }
+
+        /* Main Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        /* Agent Creator Card */
+        .agent-creator {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .agent-creator h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2d3748;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #4a5568;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .template-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .template-card {
+            padding: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        .template-card:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+        }
+
+        .template-card.selected {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .template-card h4 {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #2d3748;
+        }
+
+        .template-card p {
+            font-size: 0.875rem;
+            color: #718096;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(245, 101, 101, 0.3);
+        }
+
+        /* Active Agents */
+        .active-agents {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .active-agents h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2d3748;
+        }
+
+        .agents-grid {
+            display: grid;
+            gap: 20px;
+        }
+
+        .agent-card {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .agent-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .agent-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .agent-title {
+            font-weight: 600;
+            font-size: 1.125rem;
+            color: #2d3748;
+        }
+
+        .agent-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-live {
+            background: #48bb78;
+        }
+
+        .status-processing {
+            background: #ed8936;
+        }
+
+        .status-completed {
+            background: #4299e1;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .agent-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .stat {
+            text-align: center;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: 10px;
+        }
+
+        .stat-value {
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #718096;
+            margin-top: 2px;
+        }
+
+        .agent-logs {
+            background: #2d3748;
+            border-radius: 12px;
+            padding: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.875rem;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+
+        .log-info { color: #90cdf4; }
+        .log-success { color: #9ae6b4; }
+        .log-warning { color: #fbd38d; }
+        .log-error { color: #feb2b2; }
+
+        /* Recent Activity */
+        .recent-activity {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            grid-column: 1 / -1;
+        }
+
+        .recent-activity h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2d3748;
+        }
+
+        .activity-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .activity-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: 12px;
+            border-left: 4px solid #667eea;
+        }
+
+        .activity-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+
+        .activity-content {
+            flex: 1;
+        }
+
+        .activity-title {
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .activity-time {
+            font-size: 0.875rem;
+            color: #718096;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 20px;
+            }
+            
+            .header .stats {
+                flex-wrap: wrap;
+            }
+        }
+
+        /* Loading states */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header with Stats -->
+        <div class="header">
+            <h1>🚀 MindGlimpse Dashboard</h1>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="activeAgents">0</div>
+                    <div class="stat-label">Active Agents</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="totalRuns">0</div>
+                    <div class="stat-label">Total Runs</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="totalJobs">0</div>
+                    <div class="stat-label">Jobs Found</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="successRate">0%</div>
+                    <div class="stat-label">Success Rate</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard Grid -->
+        <div class="dashboard-grid">
+            <!-- Agent Creator -->
+            <div class="agent-creator">
+                <h2>🆕 Create New Agent</h2>
+                
+                <!-- Template Selector -->
+                <div class="template-selector" id="templateSelector">
+                    <!-- Templates will be loaded here -->
+                </div>
+
+                <!-- Custom Agent Form -->
+                <form id="agentForm">
+                    <div class="form-group">
+                        <label for="query">Search Query</label>
+                        <input type="text" id="query" class="form-control" placeholder="e.g., software engineer, nurse, lawyer" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="hoursOld">Jobs from last</label>
+                        <select id="hoursOld" class="form-control">
+                            <option value="1">1 hour</option>
+                            <option value="24" selected>24 hours</option>
+                            <option value="168">1 week</option>
+                            <option value="720">1 month</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="createCampaigns">
+                            Create Instantly.ai campaigns
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="startAgentBtn">
+                        🚀 Start New Agent
+                    </button>
+                </form>
+            </div>
+
+            <!-- Active Agents -->
+            <div class="active-agents">
+                <h2>🤖 Active Agents</h2>
+                <div class="agents-grid" id="agentsGrid">
+                    <p>No active agents. Start a search to see agents here.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="recent-activity">
+            <h2>📈 Recent Activity</h2>
+            <div class="activity-list" id="activityList">
+                <div class="activity-item">
+                    <div class="activity-icon">📊</div>
+                    <div class="activity-content">
+                        <div class="activity-title">Dashboard loaded</div>
+                        <div class="activity-time">Just now</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API Base URL
+        const API_BASE = 'https://coogi-2-production.up.railway.app';
+        
+        // State management
+        let activeAgents = new Map();
+        let agentTemplates = [];
+        let dashboardStats = {
+            activeAgents: 0,
+            totalRuns: 0,
+            totalJobs: 0,
+            successRate: 0
+        };
+
+        // Initialize dashboard
+        async function initializeDashboard() {
+            await Promise.all([
+                loadAgentTemplates(),
+                loadDashboardStats(),
+                loadRecentActivity()
+            ]);
+            
+            // Start monitoring
+            setInterval(updateDashboard, 5000);
+        }
+
+        // Load agent templates
+        async function loadAgentTemplates() {
+            try {
+                const response = await fetch(`${API_BASE}/agent-templates`);
+                if (response.ok) {
+                    agentTemplates = await response.json();
+                    renderTemplates();
+                }
+            } catch (error) {
+                console.error('Error loading templates:', error);
+            }
+        }
+
+        // Render templates
+        function renderTemplates() {
+            const selector = document.getElementById('templateSelector');
+            selector.innerHTML = agentTemplates.map(template => `
+                <div class="template-card" onclick="selectTemplate('${template.name}')">
+                    <h4>${template.name}</h4>
+                    <p>${template.description}</p>
+                </div>
+            `).join('');
+        }
+
+        // Select template
+        function selectTemplate(templateName) {
+            const template = agentTemplates.find(t => t.name === templateName);
+            if (template) {
+                document.getElementById('query').value = template.query;
+                document.getElementById('hoursOld').value = template.hours_old;
+                document.getElementById('createCampaigns').checked = template.create_campaigns;
+                
+                // Update UI
+                document.querySelectorAll('.template-card').forEach(card => {
+                    card.classList.remove('selected');
+                });
+                event.target.closest('.template-card').classList.add('selected');
+            }
+        }
+
+        // Load dashboard stats
+        async function loadDashboardStats() {
+            try {
+                const response = await fetch(`${API_BASE}/dashboard-stats`);
+                if (response.ok) {
+                    dashboardStats = await response.json();
+                    updateStatsDisplay();
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Update stats display
+        function updateStatsDisplay() {
+            document.getElementById('activeAgents').textContent = dashboardStats.active_agents || 0;
+            document.getElementById('totalRuns').textContent = dashboardStats.total_runs || 0;
+            document.getElementById('totalJobs').textContent = dashboardStats.total_jobs || 0;
+            document.getElementById('successRate').textContent = `${Math.round((dashboardStats.avg_success_rate || 0) * 100)}%`;
+        }
+
+        // Load recent activity
+        async function loadRecentActivity() {
+            try {
+                const response = await fetch(`${API_BASE}/recent-activity`);
+                if (response.ok) {
+                    const activities = await response.json();
+                    renderRecentActivity(activities);
+                }
+            } catch (error) {
+                console.error('Error loading activity:', error);
+            }
+        }
+
+        // Render recent activity
+        function renderRecentActivity(activities) {
+            const activityList = document.getElementById('activityList');
+            activityList.innerHTML = activities.map(activity => `
+                <div class="activity-item">
+                    <div class="activity-icon">🤖</div>
+                    <div class="activity-content">
+                        <div class="activity-title">${activity.query} agent ${activity.batch_status}</div>
+                        <div class="activity-time">${formatTimeAgo(activity.start_time)}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Start new agent
+        async function startAgent(formData) {
+            try {
+                const query = formData.get('query');
+                
+                const response = await fetch(`${API_BASE}/process-jobs-background`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        hours_old: parseInt(formData.get('hoursOld')),
+                        create_campaigns: formData.get('createCampaigns') === 'on'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                const batchId = result.batch_id;
+                
+                // Store agent data
+                activeAgents.set(batchId, {
+                    query: query,
+                    batchId: batchId,
+                    status: 'processing',
+                    startTime: new Date(),
+                    jobsFound: result.jobs_found || 0
+                });
+                
+                // Update UI
+                updateAgentsDisplay();
+                loadDashboardStats();
+                
+                // Clear form
+                document.getElementById('agentForm').reset();
+                
+            } catch (error) {
+                console.error('Error starting agent:', error);
+                alert(`Error starting agent: ${error.message}`);
+            }
+        }
+
+        // Update agents display
+        function updateAgentsDisplay() {
+            const agentsGrid = document.getElementById('agentsGrid');
+            
+            if (activeAgents.size === 0) {
+                agentsGrid.innerHTML = '<p>No active agents. Start a search to see agents here.</p>';
+                return;
+            }
+            
+            agentsGrid.innerHTML = Array.from(activeAgents.entries()).map(([batchId, agent]) => {
+                const duration = Math.floor((new Date() - agent.startTime) / 1000);
+                const minutes = Math.floor(duration / 60);
+                const seconds = duration % 60;
+                
+                return `
+                    <div class="agent-card">
+                        <div class="agent-header">
+                            <div class="agent-title">Agent: ${agent.query}</div>
+                            <div class="agent-status">
+                                <div class="status-indicator status-${agent.status}"></div>
+                                <button onclick="cancelAgent('${batchId}')" class="btn btn-danger">🚫 Kill</button>
+                            </div>
+                        </div>
+                        
+                        <div class="agent-stats">
+                            <div class="stat">
+                                <div class="stat-value">${agent.jobsFound}</div>
+                                <div class="stat-label">Jobs</div>
+                            </div>
+                            <div class="stat">
+                                <div class="stat-value">${minutes}m ${seconds}s</div>
+                                <div class="stat-label">Runtime</div>
+                            </div>
+                            <div class="stat">
+                                <div class="stat-value">${agent.status}</div>
+                                <div class="stat-label">Status</div>
+                            </div>
+                        </div>
+                        
+                        <div class="agent-logs" id="agent-logs-${batchId}">
+                            <div class="log-entry log-info">Loading logs...</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Cancel agent
+        async function cancelAgent(batchId) {
+            try {
+                const response = await fetch(`${API_BASE}/cancel-search/${batchId}`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    activeAgents.delete(batchId);
+                    updateAgentsDisplay();
+                    loadDashboardStats();
+                }
+            } catch (error) {
+                console.error('Error cancelling agent:', error);
+            }
+        }
+
+        // Update dashboard
+        async function updateDashboard() {
+            await Promise.all([
+                loadDashboardStats(),
+                loadRecentActivity()
+            ]);
+        }
+
+        // Utility functions
+        function formatTimeAgo(timestamp) {
+            const now = new Date();
+            const time = new Date(timestamp);
+            const diff = Math.floor((now - time) / 1000);
+            
+            if (diff < 60) return 'Just now';
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return `${Math.floor(diff / 86400)}d ago`;
+        }
+
+        // Event listeners
+        document.getElementById('agentForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            await startAgent(formData);
+        });
+
+        // Initialize on load
+        window.addEventListener('load', initializeDashboard);
+    </script>
+</body>
+</html> 

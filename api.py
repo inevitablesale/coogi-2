@@ -125,6 +125,23 @@ async def get_ui():
         </html>
         """, status_code=404)
 
+@app.get("/dashboard", response_class=HTMLResponse)
+async def get_dashboard():
+    """Serve the new dashboard UI"""
+    try:
+        with open("templates/dashboard.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="""
+        <html>
+        <head><title>MindGlimpse Dashboard</title></head>
+        <body>
+            <h1>Dashboard Not Found</h1>
+            <p>The dashboard template file is missing. Please ensure templates/dashboard.html exists.</p>
+        </body>
+        </html>
+        """, status_code=404)
+
 # Initialize services
 job_scraper = JobScraper()
 contact_finder = ContactFinder()
@@ -1714,6 +1731,55 @@ async def get_agent_history(query: str, limit: int = 10):
         }
     except Exception as e:
         logger.error(f"Error fetching agent history for {query}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/agent-templates")
+async def get_agent_templates():
+    """Get all agent templates"""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+    
+    try:
+        response = supabase.table("agent_templates").select("*").order("name").execute()
+        return response.data
+    except Exception as e:
+        logger.error(f"Error fetching agent templates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/dashboard-stats")
+async def get_dashboard_stats():
+    """Get dashboard statistics"""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+    
+    try:
+        # Get stats from the view
+        response = supabase.table("agent_dashboard_stats").select("*").execute()
+        if response.data:
+            return response.data[0]
+        else:
+            return {
+                "active_agents": 0,
+                "total_runs": 0,
+                "total_jobs": 0,
+                "avg_success_rate": 0.0,
+                "avg_duration": 0
+            }
+    except Exception as e:
+        logger.error(f"Error fetching dashboard stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/recent-activity")
+async def get_recent_activity(limit: int = 10):
+    """Get recent agent activity"""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+    
+    try:
+        response = supabase.table("recent_agent_activity").select("*").limit(limit).execute()
+        return response.data
+    except Exception as e:
+        logger.error(f"Error fetching recent activity: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
