@@ -8,17 +8,6 @@ echo "Python available: $(which python)"
 echo "Pip available: $(which pip)"
 echo "Pip3 available: $(which pip3)"
 
-# Try to install dependencies if needed
-if command -v pip3 &> /dev/null; then
-    echo "Installing dependencies with pip3..."
-    pip3 install -r requirements.txt
-elif command -v pip &> /dev/null; then
-    echo "Installing dependencies with pip..."
-    pip install -r requirements.txt
-else
-    echo "No pip found!"
-fi
-
 # Start the server
 echo "Starting server..."
 if command -v python3 &> /dev/null; then
