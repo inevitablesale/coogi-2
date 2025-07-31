@@ -890,24 +890,34 @@
             try {
                 const query = formData.get('query');
                 
+                const requestBody = {
+                    query: query,
+                    hours_old: parseInt(formData.get('hoursOld')),
+                    enforce_salary: true,
+                    auto_generate_messages: false,
+                    create_campaigns: true,
+                    campaign_name: null,
+                    min_score: 0.5
+                };
+                
+                console.log('🚀 Starting agent with request:', requestBody);
+                console.log('📡 Sending to:', `${API_BASE}/process-jobs-background`);
+                
                 const response = await fetch(`${API_BASE}/process-jobs-background`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        query: query,
-                        hours_old: parseInt(formData.get('hoursOld')),
-                        enforce_salary: true,
-                        auto_generate_messages: false,
-                        create_campaigns: true,
-                        campaign_name: null,
-                        min_score: 0.5
-                    })
+                    body: JSON.stringify(requestBody)
                 });
 
+                console.log('📥 Response status:', response.status);
+                console.log('📥 Response headers:', Object.fromEntries(response.headers.entries()));
+                
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errorText = await response.text();
+                    console.error('❌ Error response body:', errorText);
+                    throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
                 }
 
                 const result = await response.json();
