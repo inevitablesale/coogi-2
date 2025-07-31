@@ -137,10 +137,10 @@ class ContactFinder:
                         # If we found TA team, no need to check more pages
                         if has_ta_team:
                             logger.info(f"Found TA team on page {page}, stopping search")
-                    break
+                            break
                     else:
                         # No more data, stop searching
-                    break
+                        break
                 else:
                     # API error, stop searching
                     break
