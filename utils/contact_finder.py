@@ -14,12 +14,16 @@ class ContactFinder:
     def __init__(self):
         self.rapidapi_key = os.getenv("RAPIDAPI_KEY", "")
         self.hunter_api_key = os.getenv("HUNTER_API_KEY", "")
+        self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
         
     def check_ta_team_with_openai(self, company: str) -> Optional[bool]:
         """Check if company has TA team using OpenAI's knowledge base first"""
         try:
             import openai
-            response = openai.chat.completions.create(
+            # Initialize OpenAI client with API key
+            client = openai.OpenAI(api_key=self.openai_api_key)
+            
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are a company HR structure analyzer. Given a company name, determine if they likely have a DEDICATED internal talent acquisition/recruiting team (not just general HR). Return ONLY 'yes', 'no', or 'unknown'. Only large companies (>500 employees) typically have dedicated TA teams. Small companies (<100 employees) typically don't have dedicated TA teams - they may have general HR but not dedicated recruiters."},
@@ -68,7 +72,10 @@ class ContactFinder:
             if not linkedin_identifier and not company.startswith("linkedin.com/company/"):
                 try:
                     import openai
-                    response = openai.chat.completions.create(
+                    # Initialize OpenAI client with API key
+                    client = openai.OpenAI(api_key=self.openai_api_key)
+                    
+                    response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
                             {"role": "system", "content": "You are a LinkedIn company name resolver. Given a company name, return the exact LinkedIn company identifier. Return only the identifier, nothing else. Examples: 'Microsoft' -> 'microsoft', 'Apple Inc' -> 'apple', 'Google' -> 'google'"},
@@ -278,7 +285,10 @@ class ContactFinder:
         """Check company size using OpenAI's knowledge base first"""
         try:
             import openai
-            response = openai.chat.completions.create(
+            # Initialize OpenAI client with API key
+            client = openai.OpenAI(api_key=self.openai_api_key)
+            
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are a company size analyzer. Given a company name, return ONLY the approximate number of employees as a number, or 'unknown' if you don't know. Examples: 'Microsoft' -> '221000', 'Apple' -> '164000', 'Small Startup Inc' -> 'unknown'"},
@@ -311,6 +321,9 @@ class ContactFinder:
         try:
             import openai
             
+            # Initialize OpenAI client with API key
+            client = openai.OpenAI(api_key=self.openai_api_key)
+            
             # Create a single prompt for all companies
             companies_text = "\n".join([f"- {company}" for company in companies])
             
@@ -328,7 +341,7 @@ Example format:
             
             user_prompt = f"Analyze these companies:\n{companies_text}"
             
-            response = openai.chat.completions.create(
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -364,10 +377,13 @@ Example format:
         """
         try:
             import openai
+            # Initialize OpenAI client with API key
+            client = openai.OpenAI(api_key=self.openai_api_key)
+            
             # Use OpenAI's web search capability to find LinkedIn company page
             search_query = f"{company} LinkedIn company page employees"
             
-            response = openai.chat.completions.create(
+            response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {"role": "system", "content": "You are a web search assistant. Search for the LinkedIn company page and extract the employee count. Return ONLY the number of employees as an integer, or 'unknown' if not found. Do not include any other text."},
@@ -420,7 +436,10 @@ Example format:
             if not company.startswith("linkedin.com/company/"):
                 try:
                     import openai
-                    response = openai.chat.completions.create(
+                    # Initialize OpenAI client with API key
+                    client = openai.OpenAI(api_key=self.openai_api_key)
+                    
+                    response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
                             {"role": "system", "content": "You are a LinkedIn company name resolver. Given a company name, return the exact LinkedIn company identifier. Return only the identifier, nothing else. Examples: 'Microsoft' -> 'microsoft', 'Apple Inc' -> 'apple', 'Google' -> 'google'"},

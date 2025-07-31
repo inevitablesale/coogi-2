@@ -70,7 +70,10 @@ class JobScraper:
             - "nurses in chicago" → {"search_term": "nurse", "location": "Chicago, IL", "is_remote": false}
             """
             
-            response = openai.chat.completions.create(
+            # Initialize OpenAI client with API key
+            client = openai.OpenAI(api_key=self.openai_api_key)
+            
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": system_prompt},
