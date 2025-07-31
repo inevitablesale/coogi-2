@@ -790,7 +790,8 @@
                 loadAgentTemplates(),
                 loadDashboardStats(),
                 loadRecentActivity(),
-                loadInstantlyData()
+                loadInstantlyData(),
+                loadActiveAgents()  // Load existing agents from Supabase
             ]);
             
             // Start monitoring
@@ -1115,12 +1116,49 @@
             window.open(`/agent-detail?batch_id=${batchId}`, '_blank');
         }
 
+        // Load active agents from Supabase
+        async function loadActiveAgents() {
+            try {
+                const response = await fetch(`${API_BASE}/active-searches`);
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Load each active agent
+                    for (const batchId of data.active_searches) {
+                        // Get agent details from batch
+                        const batchResponse = await fetch(`${API_BASE}/batch/${batchId}`);
+                        if (batchResponse.ok) {
+                            const batchData = await batchResponse.json();
+                            
+                            // Add to active agents map
+                            activeAgents.set(batchId, {
+                                query: batchData.batch.query || 'Unknown',
+                                batchId: batchId,
+                                status: 'processing',
+                                startTime: new Date(batchData.batch.timestamp || Date.now()),
+                                jobsFound: batchData.total_results || 0
+                            });
+                            
+                            // Start monitoring this agent
+                            startAgentMonitoring(batchId);
+                        }
+                    }
+                    
+                    // Update display
+                    updateAgentsDisplay();
+                }
+            } catch (error) {
+                console.error('Error loading active agents:', error);
+            }
+        }
+
         // Update dashboard
         async function updateDashboard() {
             await Promise.all([
                 loadDashboardStats(),
                 loadRecentActivity(),
-                loadInstantlyData()
+                loadInstantlyData(),
+                loadActiveAgents()  // Keep active agents updated
             ]);
         }
 
