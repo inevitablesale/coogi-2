@@ -770,8 +770,11 @@
     </div>
 
     <script>
-        // API Base URL
-        const API_BASE = 'https://coogi-2-production.up.railway.app';
+        // API Base URLs
+        const RAILWAY_API = 'https://coogi-2-production.up.railway.app';
+        const SUPABASE_API = 'https://dbtdplhlatnlzcvdvptn.supabase.co';
+        const EDGE_FUNCTIONS_BASE = `${SUPABASE_API}/functions/v1`;
+        const SUPABASE_API_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRidGRwbGhsYXRubHpjdmR2cHRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI5NDk3MTIsImV4cCI6MjA2ODUyNTcxMn0.U3pnytCxcEoo_bJGLzjeNdt_qQ9eX8dzwezrxXOaOfA';
         
         // State management
         let activeAgents = new Map();
@@ -902,12 +905,13 @@
                 };
                 
                 console.log('🚀 Starting agent with request:', requestBody);
-                console.log('📡 Sending to:', `${API_BASE}/process-jobs-background`);
+                console.log('📡 Sending to Edge Function:', `${EDGE_FUNCTIONS_BASE}/start-agent`);
                 
-                const response = await fetch(`${API_BASE}/process-jobs-background`, {
+                const response = await fetch(`${EDGE_FUNCTIONS_BASE}/start-agent`, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${SUPABASE_API_KEY}`
                     },
                     body: JSON.stringify(requestBody)
                 });
@@ -929,18 +933,30 @@
                 }
 
                 const result = await response.json();
-                const batchId = result.batch_id;
                 
-                console.log('✅ Agent created successfully:', result);
+                console.log('✅ Agent creation response:', result);
                 
-                // Store agent data immediately
-                activeAgents.set(batchId, {
-                    query: query,
-                    batchId: batchId,
-                    status: 'processing',
-                    startTime: new Date(),
-                    jobsFound: result.jobs_found || 0
-                });
+                if (result.status === 'processing') {
+                    // Edge Function started the agent, but we need to poll for the actual batch_id
+                    // For now, create a temporary agent entry
+                    const tempBatchId = `temp_${Date.now()}`;
+                    
+                    activeAgents.set(tempBatchId, {
+                        query: query,
+                        batchId: tempBatchId,
+                        status: 'starting',
+                        startTime: new Date(),
+                        jobsFound: 0
+                    });
+                    
+                    // Start polling for the actual agent
+                    pollForAgentCreation(query, tempBatchId);
+                    
+                    // Show success message
+                    alert(`✅ Agent creation started!\n\nQuery: ${query}\nStatus: Processing...`);
+                } else {
+                    throw new Error('Failed to start agent creation');
+                }
                 
                 // Start monitoring this agent
                 startAgentMonitoring(batchId);
@@ -1039,7 +1055,11 @@
         // Monitor specific agent
         async function checkAgentStatus(batchId) {
             try {
-                const response = await fetch(`${API_BASE}/search-status/${batchId}`);
+                const response = await fetch(`${EDGE_FUNCTIONS_BASE}/get-agent-status?batch_id=${batchId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${SUPABASE_API_KEY}`
+                    }
+                });
                 
                 if (response.ok) {
                     const status = await response.json();
@@ -1070,7 +1090,11 @@
         // Fetch real logs from Supabase for specific agent
         async function fetchAgentLogs(batchId) {
             try {
-                const response = await fetch(`${API_BASE}/logs/${batchId}`);
+                const response = await fetch(`${EDGE_FUNCTIONS_BASE}/get-agent-logs?batch_id=${batchId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${SUPABASE_API_KEY}`
+                    }
+                });
                 
                 if (response.ok) {
                     const data = await response.json();
@@ -1125,6 +1149,67 @@
         // View agent detail page
         function viewAgentDetail(batchId) {
             window.open(`/agent-detail?batch_id=${batchId}`, '_blank');
+        }
+
+        // Poll for agent creation completion
+        async function pollForAgentCreation(query, tempBatchId) {
+            let attempts = 0;
+            const maxAttempts = 30; // 30 seconds
+            
+            const pollInterval = setInterval(async () => {
+                attempts++;
+                
+                try {
+                    // Check active searches to find our agent
+                    const response = await fetch(`${RAILWAY_API}/active-searches`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        
+                        // Look for an agent with our query
+                        for (const batchId of data.active_searches) {
+                            const batchResponse = await fetch(`${RAILWAY_API}/batch/${batchId}`);
+                            if (batchResponse.ok) {
+                                const batchData = await batchResponse.json();
+                                
+                                if (batchData.batch.query === query) {
+                                    // Found our agent! Replace temp entry
+                                    activeAgents.delete(tempBatchId);
+                                    
+                                    activeAgents.set(batchId, {
+                                        query: query,
+                                        batchId: batchId,
+                                        status: 'processing',
+                                        startTime: new Date(batchData.batch.timestamp),
+                                        jobsFound: batchData.total_results || 0
+                                    });
+                                    
+                                    startAgentMonitoring(batchId);
+                                    updateAgentsDisplay();
+                                    
+                                    console.log('🎉 Agent found and activated:', batchId);
+                                    clearInterval(pollInterval);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (attempts >= maxAttempts) {
+                        console.error('❌ Agent creation polling timeout');
+                        clearInterval(pollInterval);
+                        activeAgents.delete(tempBatchId);
+                        updateAgentsDisplay();
+                    }
+                    
+                } catch (error) {
+                    console.error('Error polling for agent creation:', error);
+                    if (attempts >= maxAttempts) {
+                        clearInterval(pollInterval);
+                        activeAgents.delete(tempBatchId);
+                        updateAgentsDisplay();
+                    }
+                }
+            }, 1000); // Poll every second
         }
 
         // Load active agents from Supabase
