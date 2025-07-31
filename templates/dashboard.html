@@ -374,6 +374,210 @@
             color: #718096;
         }
 
+        /* Instantly.ai Integration */
+        .instantly-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+
+        .instantly-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .instantly-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .instantly-stat {
+            text-align: center;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .instantly-stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #38a169;
+        }
+
+        .instantly-stat-label {
+            font-size: 0.875rem;
+            color: #718096;
+            margin-top: 5px;
+        }
+
+        .campaigns-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .campaign-card {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .campaign-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .campaign-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .campaign-title {
+            font-weight: 600;
+            font-size: 1.125rem;
+            color: #2d3748;
+        }
+
+        .campaign-status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-draft {
+            background: #fed7d7;
+            color: #c53030;
+        }
+
+        .status-active {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .status-paused {
+            background: #fef5e7;
+            color: #c05621;
+        }
+
+        .campaign-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .campaign-stat {
+            text-align: center;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: 8px;
+        }
+
+        .campaign-stat-value {
+            font-weight: 700;
+            font-size: 1rem;
+            color: #38a169;
+        }
+
+        .campaign-stat-label {
+            font-size: 0.75rem;
+            color: #718096;
+        }
+
+        .campaign-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 0.875rem;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+            color: white;
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+            color: white;
+        }
+
+        .btn-info {
+            background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+            color: white;
+        }
+
+        /* Lead Management */
+        .leads-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+
+        .leads-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .leads-table th,
+        .leads-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .leads-table th {
+            background: rgba(255, 255, 255, 0.8);
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .leads-table tr:hover {
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        .lead-score {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .score-high {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .score-medium {
+            background: #fef5e7;
+            color: #c05621;
+        }
+
+        .score-low {
+            background: #fed7d7;
+            color: #c53030;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .dashboard-grid {
@@ -486,6 +690,65 @@
             </div>
         </div>
 
+        <!-- Instantly.ai Campaigns -->
+        <div class="instantly-section">
+            <div class="instantly-header">
+                <h2>📧 Instantly.ai Campaigns</h2>
+                <button class="btn btn-primary" onclick="refreshCampaigns()">🔄 Refresh</button>
+            </div>
+            
+            <div class="instantly-stats">
+                <div class="instantly-stat">
+                    <div class="instantly-stat-value" id="totalCampaigns">0</div>
+                    <div class="instantly-stat-label">Total Campaigns</div>
+                </div>
+                <div class="instantly-stat">
+                    <div class="instantly-stat-value" id="totalLeads">0</div>
+                    <div class="instantly-stat-label">Total Leads</div>
+                </div>
+                <div class="instantly-stat">
+                    <div class="instantly-stat-value" id="activeCampaigns">0</div>
+                    <div class="instantly-stat-label">Active Campaigns</div>
+                </div>
+                <div class="instantly-stat">
+                    <div class="instantly-stat-value" id="avgOpenRate">0%</div>
+                    <div class="instantly-stat-label">Avg Open Rate</div>
+                </div>
+            </div>
+            
+            <div class="campaigns-grid" id="campaignsGrid">
+                <p>Loading campaigns...</p>
+            </div>
+        </div>
+
+        <!-- Lead Management -->
+        <div class="leads-section">
+            <div class="instantly-header">
+                <h2>👥 Lead Management</h2>
+                <button class="btn btn-primary" onclick="refreshLeads()">🔄 Refresh</button>
+            </div>
+            
+            <table class="leads-table" id="leadsTable">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Company</th>
+                        <th>Title</th>
+                        <th>Email</th>
+                        <th>Score</th>
+                        <th>Campaign</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="leadsTableBody">
+                    <tr>
+                        <td colspan="8">Loading leads...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
         <!-- Recent Activity -->
         <div class="recent-activity">
             <h2>📈 Recent Activity</h2>
@@ -520,7 +783,8 @@
             await Promise.all([
                 loadAgentTemplates(),
                 loadDashboardStats(),
-                loadRecentActivity()
+                loadRecentActivity(),
+                loadInstantlyData()
             ]);
             
             // Start monitoring
@@ -729,8 +993,222 @@
         async function updateDashboard() {
             await Promise.all([
                 loadDashboardStats(),
-                loadRecentActivity()
+                loadRecentActivity(),
+                loadInstantlyData()
             ]);
+        }
+
+        // Load Instantly.ai data
+        async function loadInstantlyData() {
+            await Promise.all([
+                loadCampaigns(),
+                loadLeads(),
+                loadInstantlyStats()
+            ]);
+        }
+
+        // Load campaigns
+        async function loadCampaigns() {
+            try {
+                const response = await fetch(`${API_BASE}/instantly-campaigns`);
+                if (response.ok) {
+                    const campaigns = await response.json();
+                    renderCampaigns(campaigns);
+                }
+            } catch (error) {
+                console.error('Error loading campaigns:', error);
+            }
+        }
+
+        // Render campaigns
+        function renderCampaigns(campaigns) {
+            const campaignsGrid = document.getElementById('campaignsGrid');
+            
+            if (!campaigns || campaigns.length === 0) {
+                campaignsGrid.innerHTML = '<p>No campaigns found. Start an agent with campaign creation enabled.</p>';
+                return;
+            }
+            
+            campaignsGrid.innerHTML = campaigns.map(campaign => `
+                <div class="campaign-card">
+                    <div class="campaign-header">
+                        <div class="campaign-title">${campaign.name}</div>
+                        <div class="campaign-status status-${campaign.status.toLowerCase()}">${campaign.status}</div>
+                    </div>
+                    
+                    <div class="campaign-stats">
+                        <div class="campaign-stat">
+                            <div class="campaign-stat-value">${campaign.leads_count || 0}</div>
+                            <div class="campaign-stat-label">Leads</div>
+                        </div>
+                        <div class="campaign-stat">
+                            <div class="campaign-stat-value">${campaign.open_rate || 0}%</div>
+                            <div class="campaign-stat-label">Open Rate</div>
+                        </div>
+                        <div class="campaign-stat">
+                            <div class="campaign-stat-value">${campaign.reply_rate || 0}%</div>
+                            <div class="campaign-stat-label">Reply Rate</div>
+                        </div>
+                        <div class="campaign-stat">
+                            <div class="campaign-stat-value">${campaign.click_rate || 0}%</div>
+                            <div class="campaign-stat-label">Click Rate</div>
+                        </div>
+                    </div>
+                    
+                    <div class="campaign-actions">
+                        <button class="btn btn-sm btn-info" onclick="viewCampaign('${campaign.id}')">👁️ View</button>
+                        <button class="btn btn-sm btn-success" onclick="activateCampaign('${campaign.id}')">▶️ Activate</button>
+                        <button class="btn btn-sm btn-warning" onclick="pauseCampaign('${campaign.id}')">⏸️ Pause</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Load leads
+        async function loadLeads() {
+            try {
+                const response = await fetch(`${API_BASE}/instantly-leads`);
+                if (response.ok) {
+                    const leads = await response.json();
+                    renderLeads(leads);
+                }
+            } catch (error) {
+                console.error('Error loading leads:', error);
+            }
+        }
+
+        // Render leads
+        function renderLeads(leads) {
+            const leadsTableBody = document.getElementById('leadsTableBody');
+            
+            if (!leads || leads.length === 0) {
+                leadsTableBody.innerHTML = '<tr><td colspan="8">No leads found</td></tr>';
+                return;
+            }
+            
+            leadsTableBody.innerHTML = leads.map(lead => `
+                <tr>
+                    <td>${lead.name || 'N/A'}</td>
+                    <td>${lead.company || 'N/A'}</td>
+                    <td>${lead.title || 'N/A'}</td>
+                    <td>${lead.email || 'N/A'}</td>
+                    <td>
+                        <span class="lead-score score-${getScoreClass(lead.score)}">
+                            ${Math.round(lead.score * 100)}%
+                        </span>
+                    </td>
+                    <td>${lead.campaign_name || 'N/A'}</td>
+                    <td>${lead.status || 'N/A'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-info" onclick="viewLead('${lead.id}')">👁️</button>
+                        <button class="btn btn-sm btn-success" onclick="exportLead('${lead.id}')">📤</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Load Instantly stats
+        async function loadInstantlyStats() {
+            try {
+                const response = await fetch(`${API_BASE}/instantly-stats`);
+                if (response.ok) {
+                    const stats = await response.json();
+                    updateInstantlyStats(stats);
+                }
+            } catch (error) {
+                console.error('Error loading Instantly stats:', error);
+            }
+        }
+
+        // Update Instantly stats
+        function updateInstantlyStats(stats) {
+            document.getElementById('totalCampaigns').textContent = stats.total_campaigns || 0;
+            document.getElementById('totalLeads').textContent = stats.total_leads || 0;
+            document.getElementById('activeCampaigns').textContent = stats.active_campaigns || 0;
+            document.getElementById('avgOpenRate').textContent = `${Math.round((stats.avg_open_rate || 0) * 100)}%`;
+        }
+
+        // Utility functions for Instantly
+        function getScoreClass(score) {
+            if (score >= 0.7) return 'high';
+            if (score >= 0.4) return 'medium';
+            return 'low';
+        }
+
+        // Campaign actions
+        async function viewCampaign(campaignId) {
+            try {
+                const response = await fetch(`${API_BASE}/instantly-campaigns/${campaignId}`);
+                if (response.ok) {
+                    const campaign = await response.json();
+                    alert(`Campaign: ${campaign.name}\nLeads: ${campaign.leads_count}\nStatus: ${campaign.status}`);
+                }
+            } catch (error) {
+                console.error('Error viewing campaign:', error);
+            }
+        }
+
+        async function activateCampaign(campaignId) {
+            try {
+                const response = await fetch(`${API_BASE}/instantly-campaigns/${campaignId}/activate`, {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    loadCampaigns();
+                    alert('Campaign activated successfully!');
+                }
+            } catch (error) {
+                console.error('Error activating campaign:', error);
+            }
+        }
+
+        async function pauseCampaign(campaignId) {
+            try {
+                const response = await fetch(`${API_BASE}/instantly-campaigns/${campaignId}/pause`, {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    loadCampaigns();
+                    alert('Campaign paused successfully!');
+                }
+            } catch (error) {
+                console.error('Error pausing campaign:', error);
+            }
+        }
+
+        // Lead actions
+        async function viewLead(leadId) {
+            try {
+                const response = await fetch(`${API_BASE}/instantly-leads/${leadId}`);
+                if (response.ok) {
+                    const lead = await response.json();
+                    alert(`Lead: ${lead.name}\nCompany: ${lead.company}\nEmail: ${lead.email}\nScore: ${Math.round(lead.score * 100)}%`);
+                }
+            } catch (error) {
+                console.error('Error viewing lead:', error);
+            }
+        }
+
+        async function exportLead(leadId) {
+            try {
+                const response = await fetch(`${API_BASE}/instantly-leads/${leadId}/export`, {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    alert('Lead exported successfully!');
+                }
+            } catch (error) {
+                console.error('Error exporting lead:', error);
+            }
+        }
+
+        // Refresh functions
+        function refreshCampaigns() {
+            loadCampaigns();
+        }
+
+        function refreshLeads() {
+            loadLeads();
         }
 
         // Utility functions

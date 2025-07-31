@@ -833,4 +833,204 @@ Contact: {{contact_title}}
                 
         except Exception as e:
             logger.error(f"❌ Error cleaning up lead lists: {e}")
-            return 0 
+            return 0
+
+    # Dashboard Methods
+    def get_all_campaigns(self) -> List[Dict[str, Any]]:
+        """Get all campaigns for dashboard display"""
+        try:
+            url = f"{self.base_url}/api/v2/campaigns"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to get campaigns: {response.status_code}")
+                return []
+                
+            campaigns = response.json()
+            
+            # Enhance with additional data
+            for campaign in campaigns:
+                campaign['leads_count'] = campaign.get('leads_count', 0)
+                campaign['open_rate'] = campaign.get('open_rate', 0)
+                campaign['reply_rate'] = campaign.get('reply_rate', 0)
+                campaign['click_rate'] = campaign.get('click_rate', 0)
+                
+            return campaigns
+            
+        except Exception as e:
+            logger.error(f"Error getting campaigns: {e}")
+            return []
+
+    def get_campaign(self, campaign_id: str) -> Optional[Dict[str, Any]]:
+        """Get specific campaign details"""
+        try:
+            url = f"{self.base_url}/api/v2/campaigns/{campaign_id}"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to get campaign {campaign_id}: {response.status_code}")
+                return None
+                
+            return response.json()
+            
+        except Exception as e:
+            logger.error(f"Error getting campaign {campaign_id}: {e}")
+            return None
+
+    def activate_campaign(self, campaign_id: str) -> bool:
+        """Activate a campaign"""
+        try:
+            url = f"{self.base_url}/api/v2/campaigns/{campaign_id}/activate"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to activate campaign {campaign_id}: {response.status_code}")
+                return False
+                
+            logger.info(f"✅ Activated campaign {campaign_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error activating campaign {campaign_id}: {e}")
+            return False
+
+    def pause_campaign(self, campaign_id: str) -> bool:
+        """Pause a campaign"""
+        try:
+            url = f"{self.base_url}/api/v2/campaigns/{campaign_id}/pause"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to pause campaign {campaign_id}: {response.status_code}")
+                return False
+                
+            logger.info(f"✅ Paused campaign {campaign_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error pausing campaign {campaign_id}: {e}")
+            return False
+
+    def get_all_leads(self) -> List[Dict[str, Any]]:
+        """Get all leads for dashboard display"""
+        try:
+            url = f"{self.base_url}/api/v2/leads"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to get leads: {response.status_code}")
+                return []
+                
+            leads = response.json()
+            
+            # Enhance with additional data
+            for lead in leads:
+                lead['score'] = lead.get('score', 0.5)
+                lead['status'] = lead.get('status', 'unknown')
+                lead['campaign_name'] = lead.get('campaign_name', 'N/A')
+                
+            return leads
+            
+        except Exception as e:
+            logger.error(f"Error getting leads: {e}")
+            return []
+
+    def get_lead(self, lead_id: str) -> Optional[Dict[str, Any]]:
+        """Get specific lead details"""
+        try:
+            url = f"{self.base_url}/api/v2/leads/{lead_id}"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to get lead {lead_id}: {response.status_code}")
+                return None
+                
+            return response.json()
+            
+        except Exception as e:
+            logger.error(f"Error getting lead {lead_id}: {e}")
+            return None
+
+    def export_lead(self, lead_id: str) -> bool:
+        """Export a lead"""
+        try:
+            url = f"{self.base_url}/api/v2/leads/{lead_id}/export"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to export lead {lead_id}: {response.status_code}")
+                return False
+                
+            logger.info(f"✅ Exported lead {lead_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error exporting lead {lead_id}: {e}")
+            return False
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get Instantly.ai statistics for dashboard"""
+        try:
+            # Get campaigns and leads
+            campaigns = self.get_all_campaigns()
+            leads = self.get_all_leads()
+            
+            # Calculate stats
+            total_campaigns = len(campaigns)
+            total_leads = len(leads)
+            active_campaigns = len([c for c in campaigns if c.get('status') == 'active'])
+            
+            # Calculate average open rate
+            open_rates = [c.get('open_rate', 0) for c in campaigns if c.get('open_rate')]
+            avg_open_rate = sum(open_rates) / len(open_rates) if open_rates else 0
+            
+            return {
+                "total_campaigns": total_campaigns,
+                "total_leads": total_leads,
+                "active_campaigns": active_campaigns,
+                "avg_open_rate": avg_open_rate
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting stats: {e}")
+            return {
+                "total_campaigns": 0,
+                "total_leads": 0,
+                "active_campaigns": 0,
+                "avg_open_rate": 0
+            } 

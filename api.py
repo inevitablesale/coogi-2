@@ -1782,6 +1782,91 @@ async def get_recent_activity(limit: int = 10):
         logger.error(f"Error fetching recent activity: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Instantly.ai Integration Endpoints
+@app.get("/instantly-campaigns")
+async def get_instantly_campaigns():
+    """Get all Instantly.ai campaigns"""
+    try:
+        campaigns = instantly_manager.get_all_campaigns()
+        return campaigns
+    except Exception as e:
+        logger.error(f"Error fetching Instantly campaigns: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/instantly-campaigns/{campaign_id}")
+async def get_instantly_campaign(campaign_id: str):
+    """Get specific Instantly.ai campaign"""
+    try:
+        campaign = instantly_manager.get_campaign(campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        return campaign
+    except Exception as e:
+        logger.error(f"Error fetching Instantly campaign {campaign_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/instantly-campaigns/{campaign_id}/activate")
+async def activate_instantly_campaign(campaign_id: str):
+    """Activate an Instantly.ai campaign"""
+    try:
+        result = instantly_manager.activate_campaign(campaign_id)
+        return {"message": "Campaign activated successfully", "campaign_id": campaign_id}
+    except Exception as e:
+        logger.error(f"Error activating Instantly campaign {campaign_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/instantly-campaigns/{campaign_id}/pause")
+async def pause_instantly_campaign(campaign_id: str):
+    """Pause an Instantly.ai campaign"""
+    try:
+        result = instantly_manager.pause_campaign(campaign_id)
+        return {"message": "Campaign paused successfully", "campaign_id": campaign_id}
+    except Exception as e:
+        logger.error(f"Error pausing Instantly campaign {campaign_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/instantly-leads")
+async def get_instantly_leads():
+    """Get all leads from Instantly.ai"""
+    try:
+        leads = instantly_manager.get_all_leads()
+        return leads
+    except Exception as e:
+        logger.error(f"Error fetching Instantly leads: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/instantly-leads/{lead_id}")
+async def get_instantly_lead(lead_id: str):
+    """Get specific lead from Instantly.ai"""
+    try:
+        lead = instantly_manager.get_lead(lead_id)
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        return lead
+    except Exception as e:
+        logger.error(f"Error fetching Instantly lead {lead_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/instantly-leads/{lead_id}/export")
+async def export_instantly_lead(lead_id: str):
+    """Export a lead from Instantly.ai"""
+    try:
+        result = instantly_manager.export_lead(lead_id)
+        return {"message": "Lead exported successfully", "lead_id": lead_id}
+    except Exception as e:
+        logger.error(f"Error exporting Instantly lead {lead_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/instantly-stats")
+async def get_instantly_stats():
+    """Get Instantly.ai statistics"""
+    try:
+        stats = instantly_manager.get_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Error fetching Instantly stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
