@@ -74,16 +74,25 @@ class ProxyManager:
     
     def get_next_proxy(self) -> Optional[Dict[str, str]]:
         """Get the next proxy in rotation"""
-        # Load proxies on first use if not already loaded
-        if not self.proxies:
-            self._load_free_proxies()
+        # Only load proxies if we haven't tried yet and haven't loaded any
+        if not self.proxies and self.last_proxy_refresh == 0:
+            # Start loading proxies in background (non-blocking)
+            try:
+                self._load_free_proxies()
+            except Exception as e:
+                logger.warning(f"Failed to load proxies: {e}")
+                self.proxies = []
         
+        # If no proxies available, return None (will use direct connection)
         if not self.proxies:
             return None
         
         # Refresh proxies if needed
         if time.time() - self.last_proxy_refresh > self.proxy_refresh_interval:
-            self._load_free_proxies()
+            try:
+                self._load_free_proxies()
+            except Exception as e:
+                logger.warning(f"Failed to refresh proxies: {e}")
         
         # Get next proxy
         proxy = self.proxies[self.current_proxy_index]
@@ -367,14 +376,14 @@ class JobScraper:
                     "verbose": kwargs.get('verbose', 1)
                 }
                 
-                # Get a proxy for the API call
+                # Get a proxy for the API call (non-blocking)
                 proxy_dict = self.proxy_manager.get_next_proxy()
                 if not proxy_dict:
-                    logger.warning("No proxies available, making direct call")
+                    logger.info("🌐 Making direct JobSpy API call (no proxies available)")
                     proxy_dict = None
-                
-                proxy_info = f" via proxy {list(proxy_dict.values())[0]}" if proxy_dict else ""
-                logger.info(f"🌐 Calling your JobSpy API for {search_term} in {location}{proxy_info}")
+                else:
+                    proxy_info = f" via proxy {list(proxy_dict.values())[0]}"
+                    logger.info(f"🌐 Calling your JobSpy API for {search_term} in {location}{proxy_info}")
                 
                 response = requests.get(url, params=params, proxies=proxy_dict, timeout=30)
                 
@@ -416,10 +425,10 @@ class JobScraper:
             url = "https://api.clearout.io/public/companies/autocomplete"
             params = {"query": company_name}
             
-            # Get a proxy for the API call
+            # Get a proxy for the API call (non-blocking)
             proxy_dict = self.proxy_manager.get_next_proxy()
             if not proxy_dict:
-                logger.warning("No proxies available for domain finding, making direct call")
+                logger.info("🌐 Making direct domain finding call (no proxies available)")
                 proxy_dict = None
             
             response = requests.get(url, params=params, proxies=proxy_dict, timeout=10)
