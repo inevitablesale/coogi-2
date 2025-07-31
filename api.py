@@ -1683,6 +1683,39 @@ async def get_all_logs(limit: int = 100, offset: int = 0):
         logger.error(f"Error fetching logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/agent-history/{query}")
+async def get_agent_history(query: str, limit: int = 10):
+    """Get history of agents for a specific query"""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+    
+    try:
+        # Get batches for this query
+        response = supabase.table("batches").select("*").ilike("summary", f"%{query}%").order("timestamp", desc=True).limit(limit).execute()
+        
+        agent_history = []
+        for batch in response.data:
+            # Get logs for this batch
+            logs_response = supabase.table("search_logs").select("*").eq("batch_id", batch["batch_id"]).order("timestamp", desc=True).limit(50).execute()
+            
+            agent_history.append({
+                "batch_id": batch["batch_id"],
+                "timestamp": batch["timestamp"],
+                "status": batch["status"],
+                "summary": batch["summary"],
+                "logs_count": len(logs_response.data),
+                "recent_logs": logs_response.data[:5]  # Last 5 logs
+            })
+        
+        return {
+            "query": query,
+            "total_runs": len(agent_history),
+            "history": agent_history
+        }
+    except Exception as e:
+        logger.error(f"Error fetching agent history for {query}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

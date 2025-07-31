@@ -372,6 +372,13 @@
                 const query = formData.get('query');
                 addLog(`Starting new agent for: ${query}`, 'info');
                 
+                // Get agent history first
+                const historyResponse = await fetch(`${API_BASE}/agent-history/${encodeURIComponent(query)}`);
+                let agentHistory = { total_runs: 0, history: [] };
+                if (historyResponse.ok) {
+                    agentHistory = await historyResponse.json();
+                }
+                
                 const response = await fetch(`${API_BASE}/process-jobs-background`, {
                     method: 'POST',
                     headers: {
@@ -397,7 +404,9 @@
                     batchId: batchId,
                     status: 'processing',
                     startTime: new Date(),
-                    jobsFound: result.jobs_found || 0
+                    jobsFound: result.jobs_found || 0,
+                    totalRuns: agentHistory.total_runs + 1,
+                    history: agentHistory.history
                 });
                 
                 addLog(`Agent started with batch ID: ${batchId}`, 'success');
@@ -409,11 +418,10 @@
                 // Update agents display
                 updateAgentsDisplay();
                 
-                // Add initial log to agent
+                // Fetch initial logs after a short delay
                 setTimeout(() => {
-                    addAgentLog(batchId, `Agent started for query: ${query}`, 'success');
-                    addAgentLog(batchId, `Jobs found: ${result.jobs_found || 0}`, 'info');
-                }, 100);
+                    fetchAgentLogs(batchId);
+                }, 1000);
                 
                 // Clear form
                 document.getElementById('searchForm').reset();
@@ -469,14 +477,13 @@
                         agent.status = status.status;
                         agent.isCancelled = status.is_cancelled;
                         
-                        // Add status update to agent logs
-                        addAgentLog(batchId, `Status: ${status.status}`, 'info');
+                        // Fetch real logs from Supabase
+                        await fetchAgentLogs(batchId);
                         
                         // If completed or cancelled, remove from active agents
                         if (status.status === 'completed' || status.is_cancelled) {
                             activeAgents.delete(batchId);
                             stopAgentMonitoring(batchId);
-                            addAgentLog(batchId, `Agent finished`, 'success');
                             addLog(`Agent ${batchId} finished`, 'info');
                         }
                         
@@ -484,8 +491,49 @@
                     }
                 }
             } catch (error) {
-                addAgentLog(batchId, `Error checking status: ${error.message}`, 'error');
                 addLog(`Error checking agent status: ${error.message}`, 'error', batchId);
+            }
+        }
+
+        // Fetch real logs from Supabase for specific agent
+        async function fetchAgentLogs(batchId) {
+            try {
+                const response = await fetch(`${API_BASE}/logs/${batchId}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const logs = data.logs || [];
+                    
+                    // Update agent logs display
+                    updateAgentLogs(batchId, logs);
+                }
+            } catch (error) {
+                console.error(`Error fetching logs for ${batchId}:`, error);
+            }
+        }
+
+        // Update agent logs display with real data
+        function updateAgentLogs(batchId, logs) {
+            const agentLogsContainer = document.getElementById(`agent-logs-${batchId}`);
+            if (agentLogsContainer) {
+                const logContent = agentLogsContainer.querySelector('.agent-log-content');
+                
+                // Clear existing logs
+                logContent.innerHTML = '';
+                
+                // Add logs in chronological order (oldest first)
+                logs.reverse().forEach(log => {
+                    const logEntry = document.createElement('div');
+                    logEntry.className = `log-entry log-${log.level || 'info'}`;
+                    
+                    const timestamp = new Date(log.timestamp).toLocaleTimeString();
+                    const company = log.company ? ` [${log.company}]` : '';
+                    logEntry.textContent = `[${timestamp}]${company} ${log.message}`;
+                    
+                    logContent.appendChild(logEntry);
+                });
+                
+                logContent.scrollTop = logContent.scrollHeight;
             }
         }
 
@@ -535,11 +583,13 @@
                             </p>
                             <p><strong>Jobs Found:</strong> ${agent.jobsFound}</p>
                             <p><strong>Runtime:</strong> ${minutes}m ${seconds}s</p>
+                            <p><strong>Started:</strong> ${agent.startTime.toLocaleTimeString()}</p>
+                            <p><strong>Total Runs:</strong> ${agent.totalRuns || 1}</p>
                         </div>
                         <div class="agent-logs" id="agent-logs-${batchId}">
-                            <h4>📝 Agent Logs</h4>
+                            <h4>📝 Live Agent Logs</h4>
                             <div class="agent-log-content">
-                                <div class="log-entry log-info">Agent started...</div>
+                                <div class="log-entry log-info">Loading logs...</div>
                             </div>
                         </div>
                     </div>
