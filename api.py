@@ -21,6 +21,7 @@ from utils.email_generator import EmailGenerator
 from utils.memory_manager import MemoryManager
 from utils.contract_analyzer import ContractAnalyzer
 from utils.instantly_manager import InstantlyManager
+from utils.blacklist_manager import BlacklistManager
 import requests  # Add missing import for company analysis API calls
 import time  # Add time import for rate limiting
 import json
@@ -87,6 +88,7 @@ email_generator = EmailGenerator()
 memory_manager = MemoryManager()
 contract_analyzer = ContractAnalyzer()
 instantly_manager = InstantlyManager()
+blacklist_manager = BlacklistManager()
 # company_analyzer = CompanyAnalyzer(rapidapi_key=os.getenv("RAPIDAPI_KEY", ""))  # Will be initialized after import
 
 # Request/Response Models
@@ -95,6 +97,9 @@ class JobSearchRequest(BaseModel):
     hours_old: int = 720  # Default to 1 month for broader results
     enforce_salary: bool = True
     auto_generate_messages: bool = False
+    create_campaigns: bool = False  # Optional: automatically create Instantly campaigns
+    campaign_name: Optional[str] = None  # Optional: custom campaign name
+    min_score: float = 0.5  # Minimum lead score for campaign inclusion
 
 class Lead(BaseModel):
     name: str
@@ -113,6 +118,8 @@ class JobSearchResponse(BaseModel):
     total_processed: int
     search_query: str
     timestamp: str
+    campaigns_created: Optional[List[str]] = None  # List of campaign IDs created
+    leads_added: int = 0  # Total leads added to campaigns
 
 class RawJobSpyResponse(BaseModel):
     jobs: List[Dict[str, Any]]
@@ -256,12 +263,49 @@ async def health_check():
         demo_mode=demo_mode
     )
 
+@app.get("/lead-lists")
+async def get_lead_lists():
+    """Get all lead lists from Instantly"""
+    try:
+        lead_lists = instantly_manager.get_lead_lists()
+        return {
+            "status": "success",
+            "lead_lists": lead_lists,
+            "count": len(lead_lists)
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+@app.post("/lead-lists/cleanup")
+async def cleanup_lead_lists(days_old: int = 7):
+    """Clean up old lead lists"""
+    try:
+        deleted_count = instantly_manager.cleanup_old_lead_lists(days_old)
+        return {
+            "status": "success",
+            "deleted_count": deleted_count,
+            "message": f"Cleaned up {deleted_count} old lead lists"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
 @app.post("/search-jobs", response_model=JobSearchResponse)
 async def search_jobs(request: JobSearchRequest):
     """Search for jobs and analyze companies for recruiting opportunities"""
     try:
         # Parse query
         search_params = job_scraper.parse_query(request.query)
+        
+        # Override hours_old with request parameter if provided
+        if request.hours_old != 720:  # If not default
+            search_params['hours_old'] = request.hours_old
+            logger.info(f"🔍 Overriding hours_old to {request.hours_old} hours")
         
         # Search jobs - get all available jobs
         jobs = job_scraper.search_jobs(search_params, max_results=50)
@@ -273,128 +317,279 @@ async def search_jobs(request: JobSearchRequest):
         processed_count = 0
         processed_companies = set()  # Track companies we've already analyzed
         
-        # Rate limiting: Process jobs in batches to respect 20 req/min limit
-        # Each job requires ~3-4 RapidAPI calls, so process max 5 jobs per batch
-        max_jobs_per_batch = 5
+        # Hunter.io transparency counters
+        hunter_attempts = 0
+        hunter_hits = 0
+        
+        # Initialize campaign tracking (for immediate creation)
+        campaigns_created = []
+        leads_added = 0
+        if request.create_campaigns:
+            logger.info("🎯 Will create Instantly campaigns immediately when Hunter.io emails are found")
+        
+        # Rate limiting: Process companies in batches to respect 20 req/min limit
+        # Each company requires ~6 RapidAPI calls (1 profile + up to 5 people pages), so process max 3 companies per batch
+        max_companies_per_batch = 3
         total_jobs = len(jobs)
         
-        logger.info(f"Processing {total_jobs} jobs in batches of {max_jobs_per_batch}")
+        logger.info(f"Processing {total_jobs} jobs, targeting {max_companies_per_batch} companies per batch")
         
-        # Process jobs in batches
-        for batch_start in range(0, total_jobs, max_jobs_per_batch):
-            batch_end = min(batch_start + max_jobs_per_batch, total_jobs)
-            batch_jobs = jobs[batch_start:batch_end]
+        # Process jobs until we hit our company batch limit
+        companies_in_current_batch = 0
+        batch_number = 1
             
-            logger.info(f"Processing batch {batch_start//max_jobs_per_batch + 1}: jobs {batch_start+1}-{batch_end}")
+        # Collect all unique companies first
+        unique_companies = []
+        company_jobs = {}  # Map company to their jobs
+        
+        for job in jobs:
+            # Check if already processed
+            job_fingerprint = memory_manager.create_job_fingerprint(job)
+            if memory_manager.is_job_processed(job_fingerprint):
+                continue
             
-            # Process jobs in current batch
-            for job in batch_jobs:
-                processed_count += 1
+            company = job.get('company', '')
+            
+            # Skip if we've already analyzed this company
+            if company in processed_companies:
+                logger.info(f"Skipping {company} - already analyzed")
+                memory_manager.mark_job_processed(job_fingerprint)
+                continue
+            
+            # Check blacklist BEFORE making any API calls
+            if blacklist_manager.is_blacklisted(company):
+                logger.info(f"⏭️  Skipping {company} - blacklisted")
+                memory_manager.mark_job_processed(job_fingerprint)
+                continue
+            
+            # Add to unique companies list
+            if company not in unique_companies:
+                unique_companies.append(company)
+                company_jobs[company] = []
+            
+            company_jobs[company].append(job)
+        
+        logger.info(f"📊 Found {len(unique_companies)} unique companies to analyze")
+        
+        # Process companies in batches
+        for batch_start in range(0, len(unique_companies), max_companies_per_batch):
+            batch_end = min(batch_start + max_companies_per_batch, len(unique_companies))
+            batch_companies = unique_companies[batch_start:batch_end]
+            
+            logger.info(f"Processing batch {batch_start//max_companies_per_batch + 1}: companies {batch_start+1}-{batch_end}")
+            
+            # Batch OpenAI analysis for all companies in this batch
+            logger.info(f"🔍 Batch analyzing {len(batch_companies)} companies with OpenAI...")
+            company_analysis_results = contact_finder.batch_analyze_companies(batch_companies)
+            
+            # Process each company based on analysis results
+            for company in batch_companies:
+                analysis = company_analysis_results.get(company, {})
+                company_size = analysis.get('company_size')
+                linkedin_identifier = analysis.get('linkedin_identifier', company.lower().replace(" ", "-"))
                 
-                # Check if already processed
-                job_fingerprint = memory_manager.create_job_fingerprint(job)
-                if memory_manager.is_job_processed(job_fingerprint):
-                    continue
+                # Auto-blacklist if OpenAI indicates large company
+                should_blacklist_openai = False
+                blacklist_reason_openai = ""
                 
-                company = job.get('company', '')
+                # Convert company_size to int if it's a string
+                if company_size:
+                    try:
+                        company_size_int = int(company_size) if isinstance(company_size, str) else company_size
+                        if company_size_int > 100:
+                            should_blacklist_openai = True
+                            blacklist_reason_openai = f"OpenAI indicates large company ({company_size_int} employees)"
+                            logger.info(f"🗑️  Auto-blacklisting {company} - OpenAI says {company_size_int} employees")
+                    except (ValueError, TypeError):
+                        logger.warning(f"⚠️  Invalid company size for {company}: {company_size}")
                 
-                # Skip if we've already analyzed this company
-                if company in processed_companies:
-                    logger.info(f"Skipping {company} - already analyzed")
-                    memory_manager.mark_job_processed(job_fingerprint)
-                    continue
-                
-                processed_companies.add(company)
-                
-                # Find contacts and analyze company with better error handling
-                try:
-                    description = job.get('description') or job.get('job_level') or ''
-                    result = contact_finder.find_contacts(
-                        company=company,
-                        role_hint=job.get('title', ''),
-                        keywords=job_scraper.extract_keywords(description),
-                        company_website=job.get('company_website')  # Pass website from JobSpy
-                    )
+                if should_blacklist_openai:
+                    blacklist_manager.add_to_blacklist(company, blacklist_reason_openai)
                     
-                    # Handle the return format (contacts, has_ta_team, employee_roles, company_found)
-                    contacts, has_ta_team, employee_roles, company_found = result
+                    # Mark all jobs for this company as processed
+                    for job in company_jobs[company]:
+                        job_fingerprint = memory_manager.create_job_fingerprint(job)
+                        memory_manager.mark_job_processed(job_fingerprint)
                     
-                    # Get company website from job data (JobSpy domain finding)
-                    company_website = job.get('company_website')
-                    
-                    # Hunter.io email discovery for target companies only
-                    hunter_emails = []
-                    if not has_ta_team and company_found and company_website:  # Only if no TA team AND company found AND domain found
-                        try:
-                            hunter_emails = contact_finder.find_hunter_emails_for_target_company(
-                                company=company,
-                                job_title=job.get('title', ''),
-                                employee_roles=employee_roles,
-                                company_website=company_website
-                            )
-                            # Log success only if emails were actually found
-                            if hunter_emails:
-                                logger.info(f"✅ Found {len(hunter_emails)} Hunter.io emails for {company}")
-                            else:
-                                logger.warning(f"⚠️  No Hunter.io emails found for {company}")
-                        except Exception as e:
-                            logger.error(f"Hunter.io error for {company}: {e}")
-                    elif has_ta_team:
-                        logger.info(f"⏭️  Skipping Hunter.io for {company} - has TA team")
-                    elif not company_found:
-                        logger.info(f"⏭️  Skipping Hunter.io for {company} - company not found")
-                    elif not company_website:
-                        logger.info(f"⏭️  Skipping Hunter.io for {company} - no domain found")
-                    
-                    # Analyze company for recruiting opportunity
                     company_analysis = {
                         "company": company,
-                        "job_title": job.get('title', ''),
-                        "job_url": job.get('job_url', ''),
-                        "has_ta_team": has_ta_team,
-                        "contacts_found": len(contacts),
-                        "top_contacts": contacts[:3] if contacts else [],
-                        "hunter_emails": hunter_emails,
-                        "employee_roles": employee_roles,
-                        "company_website": company_website,
-                        "company_found": company_found,
-                        "recommendation": "TARGET" if not has_ta_team else "SKIP - Has TA team",
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    
-                    companies_analyzed.append(company_analysis)
-                    
-                    # Mark job as processed
-                    memory_manager.mark_job_processed(job_fingerprint)
-                    
-                except Exception as e:
-                    logger.error(f"Error processing job {processed_count} for {company}: {e}")
-                    # Add failed job to results with error info
-                    company_analysis = {
-                        "company": company,
-                        "job_title": job.get('title', ''),
-                        "job_url": job.get('job_url', ''),
-                        "has_ta_team": False,
+                        "job_title": company_jobs[company][0].get('title', '') if company_jobs[company] else '',
+                        "job_url": company_jobs[company][0].get('job_url', '') if company_jobs[company] else '',
+                        "has_ta_team": False,  # Not checked yet
                         "contacts_found": 0,
                         "top_contacts": [],
                         "hunter_emails": [],
                         "employee_roles": [],
-                        "recommendation": f"ERROR - {str(e)[:50]}",
+                        "company_website": company_jobs[company][0].get('company_website') if company_jobs[company] else None,
+                        "company_found": True,
+                        "recommendation": "SKIP - Auto-blacklisted via OpenAI (large company)",
                         "timestamp": datetime.now().isoformat()
                     }
                     companies_analyzed.append(company_analysis)
+                    continue
+                
+                # Now process companies that passed OpenAI analysis with RapidAPI
+                # Only make RapidAPI calls for companies that weren't auto-blacklisted
+                processed_count += 1
+                companies_in_current_batch += 1
+                
+                # Process each job for this company
+                for job in company_jobs[company]:
+                    job_fingerprint = memory_manager.create_job_fingerprint(job)
+                    memory_manager.mark_job_processed(job_fingerprint)
+                    
+                    # Find contacts and analyze company with RapidAPI using LinkedIn identifier
+                    try:
+                        description = job.get('description') or job.get('job_level') or ''
+                        result = contact_finder.find_contacts(
+                            company=company,
+                            linkedin_identifier=linkedin_identifier,  # Use resolved LinkedIn identifier
+                            role_hint=job.get('title', ''),
+                            keywords=job_scraper.extract_keywords(description),
+                            company_website=job.get('company_website')  # Pass website from JobSpy
+                        )
+                        
+                        # Handle the return format (contacts, has_ta_team, employee_roles, company_found)
+                        contacts, has_ta_team, employee_roles, company_found = result
+                        
+                        # Get company website from job data (JobSpy domain finding)
+                        company_website = job.get('company_website')
+                        
+                        # Auto-blacklist logic - happens immediately after RapidAPI detection
+                        should_blacklist = False
+                        blacklist_reason = ""
+                        
+                        if has_ta_team:
+                            should_blacklist = True
+                            blacklist_reason = "Has internal TA team"
+                            logger.info(f"🗑️  Auto-blacklisting {company} - has TA team")
+                        
+                        if should_blacklist:
+                            blacklist_manager.add_to_blacklist(company, blacklist_reason)
+                            # Skip Hunter.io for blacklisted companies
+                            logger.info(f"⏭️  Skipping Hunter.io for {company} - auto-blacklisted")
+                            hunter_emails = []
+                        else:
+                            # Hunter.io email discovery for target companies only
+                            hunter_emails = []
+                            if not has_ta_team and company_found and company_website:  # Only if no TA team AND company found AND domain found
+                                hunter_attempts += 1
+                                logger.info(f"📡 Attempting Hunter.io lookup for: {company}")
+                                try:
+                                    hunter_emails = contact_finder.find_hunter_emails_for_target_company(
+                                        company=company,
+                                        job_title=job.get('title', ''),
+                                        employee_roles=employee_roles,
+                                        company_website=company_website
+                                    )
+                                    # Log success only if emails were actually found
+                                    if hunter_emails:
+                                        hunter_hits += len(hunter_emails)
+                                        logger.info(f"✅ Found {len(hunter_emails)} Hunter.io emails for {company}")
+                                        
+                                        # Immediately send to Instantly if requested
+                                        if request.create_campaigns:
+                                            logger.info(f"🚀 Immediately sending {len(hunter_emails)} emails to Instantly for {company}")
+                                            try:
+                                                # Create leads from Hunter.io emails
+                                                leads = []
+                                                for email in hunter_emails:
+                                                    lead = {
+                                                        "name": "Hiring Manager",
+                                                        "email": email,
+                                                        "company": company,
+                                                        "job_title": job.get('title', ''),
+                                                        "job_url": job.get('job_url', ''),
+                                                        "title": "Hiring Manager",
+                                                        "company_website": company_website,
+                                                        "score": 0.8,
+                                                        "hunter_emails": hunter_emails
+                                                    }
+                                                    leads.append(lead)
+                                                
+                                                # Create campaign immediately
+                                                campaign_name = request.campaign_name or f"Immediate_{company.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                                                campaign_id = instantly_manager.create_recruiting_campaign(
+                                                    leads=leads,
+                                                    campaign_name=campaign_name
+                                                )
+                                                
+                                                if campaign_id:
+                                                    campaigns_created.append(campaign_id)
+                                                    leads_added += len(hunter_emails)
+                                                    logger.info(f"✅ Immediately created Instantly campaign for {company}: {campaign_name} (ID: {campaign_id})")
+                                                else:
+                                                    logger.error(f"❌ Failed to immediately create Instantly campaign for {company}")
+                                                    
+                                            except Exception as e:
+                                                logger.error(f"❌ Error immediately creating Instantly campaign for {company}: {e}")
+                                    else:
+                                        logger.warning(f"⚠️  No Hunter.io emails found for {company}")
+                                except Exception as e:
+                                    logger.error(f"Hunter.io error for {company}: {e}")
+                            elif has_ta_team:
+                                logger.info(f"⏭️  Skipping Hunter.io for {company} - has TA team")
+                            elif not company_found:
+                                logger.info(f"⏭️  Skipping Hunter.io for {company} - company not found")
+                            elif not company_website:
+                                logger.info(f"⏭️  Skipping Hunter.io for {company} - no domain found")
+                            
+                            # Create company analysis record
+                            company_analysis = {
+                                "company": company,
+                                "job_title": job.get('title', ''),
+                                "job_url": job.get('job_url', ''),
+                                "has_ta_team": has_ta_team,
+                                "contacts_found": len(contacts),
+                                "top_contacts": contacts[:5],  # Top 5 contacts
+                                "hunter_emails": hunter_emails,
+                                "employee_roles": employee_roles,
+                                "company_website": company_website,
+                                "company_found": company_found,
+                                "recommendation": "SKIP - Auto-blacklisted" if should_blacklist else "PROCESS - Target company",
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            companies_analyzed.append(company_analysis)
+                            
+                    except Exception as e:
+                        logger.error(f"Error analyzing {company}: {e}")
+                        # Create error record
+                        company_analysis = {
+                            "company": company,
+                            "job_title": job.get('title', ''),
+                            "job_url": job.get('job_url', ''),
+                            "has_ta_team": False,
+                            "contacts_found": 0,
+                            "top_contacts": [],
+                            "hunter_emails": [],
+                            "employee_roles": [],
+                            "company_website": job.get('company_website'),
+                            "company_found": False,
+                            "recommendation": f"ERROR - {str(e)}",
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        companies_analyzed.append(company_analysis)
+                
+                # Wait between batches to respect rate limits
+                if batch_end < len(unique_companies):
+                    logger.info(f"Batch complete. Waiting 60 seconds before next batch...")
+                    time.sleep(60)
             
-            # Wait between batches to respect rate limits
-            if batch_end < total_jobs:
-                logger.info(f"Batch complete. Waiting 60 seconds before next batch...")
-                time.sleep(60)
+
+        
+
+        
+        # Log Hunter.io summary
+        logger.info(f"📊 Hunter.io Summary: {hunter_attempts} attempts, {hunter_hits} emails found")
         
         return JobSearchResponse(
             companies_analyzed=companies_analyzed,
             jobs_found=len(jobs),
             total_processed=processed_count,
             search_query=request.query,
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now().isoformat(),
+            campaigns_created=campaigns_created if campaigns_created else None,
+            leads_added=leads_added
         )
         
     except Exception as e:
@@ -1234,6 +1429,29 @@ async def get_all_batches(limit: int = 10, offset: int = 0):
     except Exception as e:
         logger.error(f"Error fetching batches: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/blacklist")
+async def get_blacklist():
+    """Get all blacklisted companies"""
+    return blacklist_manager.get_blacklist_stats()
+
+@app.post("/blacklist/add")
+async def add_to_blacklist(company: str, reason: str = ""):
+    """Add company to blacklist"""
+    blacklist_manager.add_to_blacklist(company, reason)
+    return {"message": f"Added {company} to blacklist", "reason": reason}
+
+@app.delete("/blacklist/remove")
+async def remove_from_blacklist(company: str):
+    """Remove company from blacklist"""
+    blacklist_manager.remove_from_blacklist(company)
+    return {"message": f"Removed {company} from blacklist"}
+
+@app.delete("/blacklist/clear")
+async def clear_blacklist():
+    """Clear all blacklisted companies"""
+    blacklist_manager.clear_blacklist()
+    return {"message": "Cleared all blacklisted companies"}
 
 @app.get("/companies/target")
 async def get_target_companies(limit: int = 20, offset: int = 0):

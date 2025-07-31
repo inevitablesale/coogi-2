@@ -16,12 +16,19 @@ class JobScraper:
         self.rapidapi_key = os.getenv("RAPIDAPI_KEY", "")
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
         
-        # Major US cities for location variant strategy
+        # Major US cities for location variant strategy (50 cities)
         self.us_cities = [
-            "San Francisco, CA", "New York, NY", "Austin, TX", "Seattle, WA", 
-            "Boston, MA", "Denver, CO", "Chicago, IL", "Los Angeles, CA",
-            "Atlanta, GA", "Washington, DC", "Portland, OR", "San Diego, CA",
-            "Nashville, TN", "Miami, FL", "Phoenix, AZ"
+            "New York, NY", "Los Angeles, CA", "Chicago, IL", "Houston, TX", "Phoenix, AZ",
+            "Philadelphia, PA", "San Antonio, TX", "San Diego, CA", "Dallas, TX", "San Jose, CA",
+            "Austin, TX", "Jacksonville, FL", "Fort Worth, TX", "Columbus, OH", "Charlotte, NC",
+            "San Francisco, CA", "Indianapolis, IN", "Seattle, WA", "Denver, CO", "Washington, DC",
+            "Boston, MA", "El Paso, TX", "Nashville, TN", "Detroit, MI", "Oklahoma City, OK",
+            "Portland, OR", "Las Vegas, NV", "Memphis, TN", "Louisville, KY", "Baltimore, MD",
+            "Milwaukee, WI", "Albuquerque, NM", "Tucson, AZ", "Fresno, CA", "Sacramento, CA",
+            "Mesa, AZ", "Kansas City, MO", "Atlanta, GA", "Long Beach, CA", "Colorado Springs, CO",
+            "Raleigh, NC", "Miami, FL", "Virginia Beach, VA", "Omaha, NE", "Oakland, CA",
+            "Minneapolis, MN", "Tampa, FL", "Tulsa, OK", "Arlington, TX", "New Orleans, LA",
+            "Wichita, KS", "Cleveland, OH", "Bakersfield, CA", "Aurora, CO", "Anaheim, CA"
         ]
         
     def parse_query(self, query: str) -> Dict[str, Any]:
@@ -53,10 +60,14 @@ class JobScraper:
             - linkedin_fetch_description: true for detailed descriptions
             - verbose: false for production
             
+            IMPORTANT: If a specific city/state is mentioned in the query, use that exact location. Only use "United States" if no specific location is mentioned or if the query explicitly asks for nationwide/remote jobs.
+            
             Examples:
             - "python developers in san francisco" → {"search_term": "python developer", "location": "San Francisco, CA", "is_remote": false}
             - "remote software engineers" → {"search_term": "software engineer", "location": "United States", "is_remote": true}
             - "marketing managers in new york" → {"search_term": "marketing manager", "location": "New York, NY", "is_remote": false}
+            - "lawyer attorney in new york" → {"search_term": "lawyer attorney", "location": "New York, NY", "is_remote": false}
+            - "nurses in chicago" → {"search_term": "nurse", "location": "Chicago, IL", "is_remote": false}
             """
             
             response = openai.chat.completions.create(
@@ -168,53 +179,65 @@ class JobScraper:
         processed_companies = set()
         processed_company_domains = {}  # Cache domains by company name
         
-        # Process one city at a time for better performance
+        # Search across multiple US cities for better coverage
         if location.lower() in ["united states", "us", "usa"]:
-            # Use first city for US-wide searches
-            search_location = self.us_cities[0]  # Start with San Francisco
-            logger.info(f"🏙️  Searching in {search_location} (one city at a time)")
+            # Search across all US cities for comprehensive coverage
+            search_locations = self.us_cities
+            logger.info(f"🏙️  Searching across {len(search_locations)} US cities")
         else:
-            search_location = location
+            search_locations = [location]
+            logger.info(f"🏙️  Searching in {location}")
             
-        try:
-            # Call JobSpy API for this location
-            city_jobs = self._call_jobspy_api(
-                search_term=search_term,
-                location=search_location,
-                hours_old=hours_old,
-                job_type=job_type,
-                is_remote=is_remote,
-                site_name=site_name,
-                results_wanted=results_wanted,
-                offset=offset,
-                distance=distance,
-                easy_apply=easy_apply,
-                country_indeed=country_indeed,
-                google_search_term=google_search_term,
-                linkedin_fetch_description=linkedin_fetch_description,
-                verbose=verbose
-            )
-            
-            # Process jobs
-            for job in city_jobs:
-                company = job.get('company', '')
-                job_key = f"{job.get('title', '')}-{company}-{job.get('job_url', '')}"
+        # Search each city and collect unique jobs with rate limiting
+        for i, search_location in enumerate(search_locations):
+            try:
+                logger.info(f"🌐 Calling your JobSpy API for {search_term} in {search_location}")
                 
-                if company and job_key not in processed_companies:
-                    processed_companies.add(job_key)
-                    
-                    # Add domain finding for company website (cache by company name)
-                    if not job.get('company_website'):
-                        if company not in processed_company_domains:
-                            processed_company_domains[company] = self._find_company_domain(company)
-                        job['company_website'] = processed_company_domains[company]
-                    
-                    all_jobs.append(job)
-            
-            logger.info(f"📊 Found {len(city_jobs)} jobs in {search_location}, {len(all_jobs)} total unique jobs")
+                # Call JobSpy API for this location
+                city_jobs = self._call_jobspy_api(
+                    search_term=search_term,
+                    location=search_location,
+                    hours_old=hours_old,
+                    job_type=job_type,
+                    is_remote=is_remote,
+                    site_name=site_name,
+                    results_wanted=results_wanted,
+                    offset=offset,
+                    distance=distance,
+                    easy_apply=easy_apply,
+                    country_indeed=country_indeed,
+                    google_search_term=google_search_term,
+                    linkedin_fetch_description=linkedin_fetch_description,
+                    verbose=verbose
+                )
                 
-        except Exception as e:
-            logger.error(f"Error searching in {search_location}: {e}")
+                # Process jobs from this city
+                for job in city_jobs:
+                    company = job.get('company', '')
+                    job_key = f"{job.get('title', '')}-{company}-{job.get('job_url', '')}"
+                    
+                    if company and job_key not in processed_companies:
+                        processed_companies.add(job_key)
+                        
+                        # Add domain finding for company website (cache by company name)
+                        if not job.get('company_website'):
+                            if company not in processed_company_domains:
+                                processed_company_domains[company] = self._find_company_domain(company)
+                            job['company_website'] = processed_company_domains[company]
+                        
+                        all_jobs.append(job)
+                
+                logger.info(f"✅ Your JobSpy API returned {len(city_jobs)} jobs (total: {len(all_jobs)}) for {search_location}")
+                
+                # Rate limiting: Add delay between API calls to avoid overwhelming the server
+                if i < len(search_locations) - 1:  # Don't delay after the last city
+                    delay = 5  # 5 seconds between calls (increased from 2)
+                    logger.info(f"⏳ Rate limiting: Waiting {delay} seconds before next city...")
+                    time.sleep(delay)
+                    
+            except Exception as e:
+                logger.error(f"Error searching in {search_location}: {e}")
+                continue
         
         logger.info(f"📊 Total unique jobs found: {len(all_jobs)}")
         return all_jobs[:max_results]
