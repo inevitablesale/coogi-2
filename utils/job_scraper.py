@@ -130,7 +130,7 @@ class JobScraper:
                 "verbose": False
             }
         
-    def search_jobs(self, search_params: Dict[str, Any] = None, **kwargs) -> List[Dict[str, Any]]:
+    def search_jobs(self, search_params: Dict[str, Any] = None, tracker=None, **kwargs) -> List[Dict[str, Any]]:
         """
         Search for jobs using JobSpy API with city variant strategy
         Accepts either a search_params dictionary or individual parameters
@@ -224,7 +224,7 @@ class JobScraper:
                         # Add domain finding for company website (cache by company name)
                         if not job.get('company_website'):
                             if company not in processed_company_domains:
-                                processed_company_domains[company] = self._find_company_domain(company)
+                                processed_company_domains[company] = self._find_company_domain(company, tracker)
                             job['company_website'] = processed_company_domains[company]
                         
                         all_jobs.append(job)
@@ -318,7 +318,7 @@ class JobScraper:
         logger.error(f"❌ JobSpy API call failed after {max_retries} retries")
         return []
             
-    def _find_company_domain(self, company_name: str) -> Optional[str]:
+    def _find_company_domain(self, company_name: str, tracker=None) -> Optional[str]:
         """Find company website domain using Clearout API"""
         try:
             url = "https://api.clearout.io/public/companies/autocomplete"
@@ -343,13 +343,19 @@ class JobScraper:
                     
                     if best_match:
                         logger.info(f"🌐 Found domain for {company_name}: {best_match}")
+                        if tracker:
+                            tracker.save_domain_search(company_name, best_match)
                         return best_match
             
             logger.warning(f"⚠️  No domain found for {company_name}")
+            if tracker:
+                tracker.save_domain_search(company_name, error="No domain found")
             return None
             
         except Exception as e:
             logger.error(f"❌ Domain finding failed for {company_name}: {e}")
+            if tracker:
+                tracker.save_domain_search(company_name, error=str(e))
             return None
         
     def extract_keywords(self, job_description: str) -> List[str]:
