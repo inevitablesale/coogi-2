@@ -624,7 +624,7 @@ curl -X POST "https://coogi-2-production.up.railway.app/search-jobs" \
 ```
 
 ### Search for Recent Nursing Jobs
-```bash
+   ```bash
 curl -X POST "https://coogi-2-production.up.railway.app/search-jobs" \
   -H "Content-Type: application/json" \
   -d '{
@@ -635,7 +635,7 @@ curl -X POST "https://coogi-2-production.up.railway.app/search-jobs" \
 ```
 
 ### Company Analysis
-```bash
+   ```bash
 curl -X POST "https://coogi-2-production.up.railway.app/analyze-companies" \
   -H "Content-Type: application/json" \
   -d '{
@@ -651,10 +651,10 @@ curl -X POST "https://coogi-2-production.up.railway.app/analyze-companies" \
 ## 🧪 Testing
 
 ### Local Testing
-```bash
+   ```bash
 # Start the API
-python api.py
-
+   python api.py
+   
 # Test health endpoint
 curl http://localhost:8000/
 

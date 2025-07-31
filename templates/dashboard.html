@@ -310,6 +310,8 @@
         .log-entry {
             margin-bottom: 5px;
             padding: 2px 0;
+            word-wrap: break-word;
+            line-height: 1.4;
         }
 
         .log-info { color: #90cdf4; }
@@ -779,6 +781,7 @@
         // State management
         let activeAgents = new Map();
         let agentTemplates = [];
+        let statusIntervals = new Map();
         let dashboardStats = {
             activeAgents: 0,
             totalRuns: 0,
@@ -920,6 +923,9 @@
                     jobsFound: result.jobs_found || 0
                 });
                 
+                // Start monitoring this agent
+                startAgentMonitoring(batchId);
+                
                 // Update UI
                 updateAgentsDisplay();
                 loadDashboardStats();
@@ -989,11 +995,98 @@
 
                 if (response.ok) {
                     activeAgents.delete(batchId);
+                    stopAgentMonitoring(batchId);
                     updateAgentsDisplay();
                     loadDashboardStats();
                 }
             } catch (error) {
                 console.error('Error cancelling agent:', error);
+            }
+        }
+
+        // Monitor specific agent
+        async function checkAgentStatus(batchId) {
+            try {
+                const response = await fetch(`${API_BASE}/search-status/${batchId}`);
+                
+                if (response.ok) {
+                    const status = await response.json();
+                    
+                    // Update agent data
+                    const agent = activeAgents.get(batchId);
+                    if (agent) {
+                        agent.status = status.status;
+                        agent.isCancelled = status.is_cancelled;
+                        
+                        // Fetch real logs from Supabase
+                        await fetchAgentLogs(batchId);
+                        
+                        // If completed or cancelled, remove from active agents
+                        if (status.status === 'completed' || status.is_cancelled) {
+                            activeAgents.delete(batchId);
+                            stopAgentMonitoring(batchId);
+                        }
+                        
+                        updateAgentsDisplay();
+                    }
+                }
+            } catch (error) {
+                console.error(`Error checking agent status: ${error.message}`);
+            }
+        }
+
+        // Fetch real logs from Supabase for specific agent
+        async function fetchAgentLogs(batchId) {
+            try {
+                const response = await fetch(`${API_BASE}/logs/${batchId}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const logs = data.logs || [];
+                    
+                    // Update agent logs display
+                    updateAgentLogs(batchId, logs);
+                }
+            } catch (error) {
+                console.error(`Error fetching logs for ${batchId}:`, error);
+            }
+        }
+
+        // Update agent logs display with real data
+        function updateAgentLogs(batchId, logs) {
+            const agentLogsContainer = document.getElementById(`agent-logs-${batchId}`);
+            if (agentLogsContainer) {
+                // Clear existing logs
+                agentLogsContainer.innerHTML = '';
+                
+                // Add logs in chronological order (oldest first)
+                logs.reverse().forEach(log => {
+                    const logEntry = document.createElement('div');
+                    logEntry.className = `log-entry log-${log.level || 'info'}`;
+                    
+                    const timestamp = new Date(log.timestamp).toLocaleTimeString();
+                    const company = log.company ? ` [${log.company}]` : '';
+                    logEntry.textContent = `[${timestamp}]${company} ${log.message}`;
+                    
+                    agentLogsContainer.appendChild(logEntry);
+                });
+                
+                agentLogsContainer.scrollTop = agentLogsContainer.scrollHeight;
+            }
+        }
+
+        // Start monitoring for specific agent
+        function startAgentMonitoring(batchId) {
+            const interval = setInterval(() => checkAgentStatus(batchId), 5000);
+            statusIntervals.set(batchId, interval);
+        }
+
+        // Stop monitoring for specific agent
+        function stopAgentMonitoring(batchId) {
+            const interval = statusIntervals.get(batchId);
+            if (interval) {
+                clearInterval(interval);
+                statusIntervals.delete(batchId);
             }
         }
 
