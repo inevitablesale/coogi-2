@@ -931,7 +931,9 @@
                 const result = await response.json();
                 const batchId = result.batch_id;
                 
-                // Store agent data
+                console.log('✅ Agent created successfully:', result);
+                
+                // Store agent data immediately
                 activeAgents.set(batchId, {
                     query: query,
                     batchId: batchId,
@@ -943,9 +945,15 @@
                 // Start monitoring this agent
                 startAgentMonitoring(batchId);
                 
-                // Update UI
+                // Update UI immediately
                 updateAgentsDisplay();
                 loadDashboardStats();
+                
+                // Show success message
+                console.log('🎉 Agent added to UI:', batchId);
+                
+                // Show success alert
+                alert(`✅ Agent started successfully!\n\nQuery: ${query}\nBatch ID: ${batchId}\nJobs Found: ${result.jobs_found || 0}`);
                 
                 // Clear form
                 document.getElementById('agentForm').reset();
@@ -959,6 +967,9 @@
         // Update agents display
         function updateAgentsDisplay() {
             const agentsGrid = document.getElementById('agentsGrid');
+            
+            console.log('🔄 Updating agents display. Active agents:', activeAgents.size);
+            console.log('📊 Active agents data:', Array.from(activeAgents.entries()));
             
             if (activeAgents.size === 0) {
                 agentsGrid.innerHTML = '<p>No active agents. Start a search to see agents here.</p>';
