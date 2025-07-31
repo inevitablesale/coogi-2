@@ -41,8 +41,8 @@ serve(async (req) => {
       )
     }
 
-    // Start agent creation asynchronously
-    const agentPromise = fetch(`${API_BASE}/process-jobs-background`, {
+    // Start agent creation asynchronously using the city-by-city flow
+    const agentPromise = fetch(`${API_BASE}/search-jobs`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

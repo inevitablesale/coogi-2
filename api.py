@@ -667,7 +667,7 @@ async def search_jobs(request: JobSearchRequest):
         
         return JobSearchResponse(
             companies_analyzed=companies_analyzed,
-            jobs_found=len(jobs),
+            jobs_found=total_jobs_found,
             total_processed=processed_count,
             search_query=request.query,
             timestamp=datetime.now().isoformat(),
