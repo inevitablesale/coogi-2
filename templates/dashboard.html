@@ -670,12 +670,7 @@
                         </select>
                     </div>
 
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="createCampaigns">
-                            Create Instantly.ai campaigns
-                        </label>
-                    </div>
+
 
                     <button type="submit" class="btn btn-primary" id="startAgentBtn">
                         🚀 Start New Agent
@@ -832,7 +827,7 @@
             if (template) {
                 document.getElementById('query').value = template.query;
                 document.getElementById('hoursOld').value = template.hours_old;
-                document.getElementById('createCampaigns').checked = template.create_campaigns;
+
                 
                 // Update UI
                 document.querySelectorAll('.template-card').forEach(card => {
@@ -905,7 +900,7 @@
                         hours_old: parseInt(formData.get('hoursOld')),
                         enforce_salary: true,
                         auto_generate_messages: false,
-                        create_campaigns: formData.get('createCampaigns') === 'on',
+                        create_campaigns: true,
                         campaign_name: null,
                         min_score: 0.5
                     })
