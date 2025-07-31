@@ -76,6 +76,28 @@ rate_limiter = RateLimiter(max_requests=20, time_window=60)
 # Global search cancellation tracking
 active_searches = {}  # batch_id -> cancellation flag
 
+# Real-time logging to Supabase
+async def log_to_supabase(batch_id: str, message: str, level: str = "info", company: str = None):
+    """Send log message directly to Supabase in real-time"""
+    if not supabase:
+        return
+    
+    try:
+        log_data = {
+            "batch_id": batch_id,
+            "message": message,
+            "level": level,
+            "company": company,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        supabase.table("search_logs").insert(log_data).execute()
+        
+    except Exception as e:
+        # Fallback to console logging if Supabase fails
+        logger.error(f"Failed to log to Supabase: {e}")
+        logger.info(f"[{batch_id}] {message}")
+
 app = FastAPI(
     title="MCP: Master Control Program API",
     description="Automated recruiting and outreach platform API",
@@ -1400,6 +1422,9 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
         results = []
         processed_count = 0
         
+        # Log start of processing
+        await log_to_supabase(batch_id, f"🚀 Starting job search processing for {len(jobs)} jobs", "info")
+        
         # Process jobs in batches with rate limiting
         max_jobs_per_batch = 5
         total_jobs = len(jobs)
@@ -1407,52 +1432,92 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
         for batch_start in range(0, total_jobs, max_jobs_per_batch):
             # Check if search has been cancelled
             if batch_id in active_searches and active_searches[batch_id]:
-                logger.info(f"🚫 Search {batch_id} was cancelled, stopping processing")
+                await log_to_supabase(batch_id, "🚫 Search was cancelled, stopping processing", "warning")
                 break
             
             batch_end = min(batch_start + max_jobs_per_batch, total_jobs)
             batch_jobs = jobs[batch_start:batch_end]
             
+            await log_to_supabase(batch_id, f"📦 Processing batch {batch_start//max_jobs_per_batch + 1} ({len(batch_jobs)} jobs)", "info")
+            
             # Process current batch
             for job in batch_jobs:
                 # Check for cancellation before each job
                 if batch_id in active_searches and active_searches[batch_id]:
-                    logger.info(f"🚫 Search {batch_id} was cancelled, stopping processing")
+                    await log_to_supabase(batch_id, "🚫 Search was cancelled, stopping processing", "warning")
                     break
                 
                 company = job.get('company', '')
+                job_title = job.get('title', '')
+                
+                await log_to_supabase(batch_id, f"🔍 Analyzing company: {company} - {job_title}", "info", company)
                 
                 # Skip enterprise companies
                 enterprise_companies = ["google", "microsoft", "amazon", "apple"]
                 if company and any(enterprise in company.lower() for enterprise in enterprise_companies):
+                    await log_to_supabase(batch_id, f"⏭️ Skipping enterprise company: {company}", "info", company)
                     continue
                 
                 # Analyze company
-                contacts, has_ta_team, employee_roles, company_found = contact_finder.find_contacts(
-                    company=company,
-                    role_hint=job.get('title', ''),
-                    keywords=job_scraper.extract_keywords(job.get('description', '')),
-                    linkedin_company_url=job.get('linkedin_company_url')
-                )
-                
-                # Create result
-                result = WebhookResult(
-                    company=company,
-                    job_title=job.get('title', ''),
-                    job_url=job.get('job_url', ''),
-                    has_ta_team=has_ta_team,
-                    contacts_found=len(contacts),
-                    top_contacts=contacts[:3] if contacts else [],
-                    recommendation="TARGET" if not has_ta_team else "SKIP - Has TA team",
-                    timestamp=datetime.now().isoformat()
-                )
-                
-                results.append(result)
-                processed_count += 1
+                try:
+                    contacts, has_ta_team, employee_roles, company_found = contact_finder.find_contacts(
+                        company=company,
+                        role_hint=job.get('title', ''),
+                        keywords=job_scraper.extract_keywords(job.get('description', '')),
+                        linkedin_company_url=job.get('linkedin_company_url')
+                    )
+                    
+                    await log_to_supabase(batch_id, f"📊 Found {len(contacts)} contacts, TA team: {has_ta_team}", "info", company)
+                    
+                    # Hunter.io email discovery
+                    if not has_ta_team and company_found:
+                        await log_to_supabase(batch_id, f"📡 Attempting Hunter.io lookup for: {company}", "info", company)
+                        
+                        try:
+                            hunter_emails = contact_finder.find_hunter_emails_for_target_company(
+                                company=company,
+                                job_title=job_title,
+                                employee_roles=employee_roles,
+                                company_website=job.get('company_website')
+                            )
+                            
+                            if hunter_emails:
+                                await log_to_supabase(batch_id, f"✅ Found {len(hunter_emails)} Hunter.io emails for {company}", "success", company)
+                                
+                                # Create Instantly campaign if requested
+                                if request.create_campaigns:
+                                    await log_to_supabase(batch_id, f"🚀 Creating Instantly campaign for {company}", "info", company)
+                                    # Campaign creation logic would go here
+                            else:
+                                await log_to_supabase(batch_id, f"⚠️ No Hunter.io emails found for {company}", "warning", company)
+                                
+                        except Exception as e:
+                            await log_to_supabase(batch_id, f"❌ Hunter.io error for {company}: {str(e)}", "error", company)
+                    
+                    # Create result
+                    result = WebhookResult(
+                        company=company,
+                        job_title=job_title,
+                        job_url=job.get('job_url', ''),
+                        has_ta_team=has_ta_team,
+                        contacts_found=len(contacts),
+                        top_contacts=contacts[:3] if contacts else [],
+                        recommendation="TARGET" if not has_ta_team else "SKIP - Has TA team",
+                        hunter_emails=hunter_emails if 'hunter_emails' in locals() else [],
+                        timestamp=datetime.now().isoformat()
+                    )
+                    
+                    results.append(result)
+                    processed_count += 1
+                    
+                    await log_to_supabase(batch_id, f"✅ Completed analysis for {company}", "success", company)
+                    
+                except Exception as e:
+                    await log_to_supabase(batch_id, f"❌ Error analyzing {company}: {str(e)}", "error", company)
             
             # Check for cancellation before sending webhook
             if batch_id in active_searches and active_searches[batch_id]:
-                logger.info(f"🚫 Search {batch_id} was cancelled, stopping processing")
+                await log_to_supabase(batch_id, "🚫 Search was cancelled, stopping processing", "warning")
                 break
             
             # Send webhook for this batch
@@ -1470,18 +1535,21 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
             # Send webhook (in production, this would be to your webhook URL)
             await send_webhook(webhook_data)
             
+            await log_to_supabase(batch_id, f"📤 Sent webhook for batch {batch_start//max_jobs_per_batch + 1}", "info")
+            
             # Wait between batches
             if batch_end < total_jobs:
+                await log_to_supabase(batch_id, "⏳ Waiting 60 seconds before next batch...", "info")
                 await asyncio.sleep(60)
         
         # Clean up the search from active_searches
         if batch_id in active_searches:
             del active_searches[batch_id]
         
-        logger.info(f"Background processing complete for batch {batch_id}")
+        await log_to_supabase(batch_id, f"🎉 Background processing complete for batch {batch_id}", "success")
         
     except Exception as e:
-        logger.error(f"Error in background processing: {e}")
+        await log_to_supabase(batch_id, f"❌ Error in background processing: {str(e)}", "error")
         # Clean up on error
         if batch_id in active_searches:
             del active_searches[batch_id]
@@ -1587,6 +1655,32 @@ async def get_target_companies(limit: int = 20, offset: int = 0):
         
     except Exception as e:
         logger.error(f"Error fetching target companies: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/logs/{batch_id}")
+async def get_search_logs(batch_id: str, limit: int = 100):
+    """Get real-time logs for a specific search batch"""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+    
+    try:
+        response = supabase.table("search_logs").select("*").eq("batch_id", batch_id).order("timestamp", desc=True).limit(limit).execute()
+        return {"logs": response.data}
+    except Exception as e:
+        logger.error(f"Error fetching logs for batch {batch_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/logs")
+async def get_all_logs(limit: int = 100, offset: int = 0):
+    """Get all search logs from Supabase"""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+    
+    try:
+        response = supabase.table("search_logs").select("*").order("timestamp", desc=True).range(offset, offset + limit - 1).execute()
+        return {"logs": response.data}
+    except Exception as e:
+        logger.error(f"Error fetching logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
