@@ -2049,34 +2049,52 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                 await log_to_supabase(batch_id, f"❌ Error processing city {city}: {str(e)}", "error")
                 continue
         
-        # Send final webhook with all results
-        await log_to_supabase(batch_id, f"🎉 Processing complete! Analyzed {processed_count} companies across {len(cities_to_process)} cities", "success")
+        # Check if search was cancelled during processing
+        if batch_id in active_searches and active_searches[batch_id]:
+            await log_to_supabase(batch_id, f"🚫 Agent was cancelled during processing. Analyzed {processed_count} companies across {len(cities_to_process)} cities", "warning")
+            
+            # Update agent status to cancelled
+            try:
+                supabase.table("agents").update({
+                    "status": "cancelled",
+                    "end_time": datetime.now().isoformat(),
+                    "processed_companies": processed_count,
+                    "processed_cities": len(cities_to_process)
+                }).eq("batch_id", batch_id).execute()
+                logger.info(f"✅ Agent {batch_id} marked as cancelled")
+            except Exception as e:
+                logger.error(f"❌ Error updating agent cancellation status: {e}")
+        else:
+            # Send final webhook with all results
+            await log_to_supabase(batch_id, f"🎉 Processing complete! Analyzed {processed_count} companies across {len(cities_to_process)} cities", "success")
+            
+            # Update agent status to completed
+            try:
+                supabase.table("agents").update({
+                    "status": "completed",
+                    "end_time": datetime.now().isoformat(),
+                    "processed_companies": processed_count,
+                    "processed_cities": len(cities_to_process)
+                }).eq("batch_id", batch_id).execute()
+                logger.info(f"✅ Agent {batch_id} marked as completed")
+            except Exception as e:
+                logger.error(f"❌ Error updating agent completion status: {e}")
         
-        # Update agent status to completed
-        try:
-            supabase.table("agents").update({
-                "status": "completed",
-                "end_time": datetime.now().isoformat(),
-                "processed_companies": processed_count,
-                "processed_cities": len(cities_to_process)
-            }).eq("batch_id", batch_id).execute()
-            logger.info(f"✅ Agent {batch_id} marked as completed")
-        except Exception as e:
-            logger.error(f"❌ Error updating agent completion status: {e}")
-        
-        webhook_data = WebhookRequest(
-            batch_id=batch_id,
-            results=results,
-            summary={
-                "total_companies": processed_count,
-                "total_cities": len(cities_to_process),
-                "target_companies": len([r for r in results if r.recommendation == "TARGET"]),
-                "skipped_companies": len([r for r in results if "SKIP" in r.recommendation])
-            },
-            timestamp=datetime.now().isoformat()
-        )
-        
-        await send_webhook(webhook_data)
+        # Only send webhook for completed agents, not cancelled ones
+        if not (batch_id in active_searches and active_searches[batch_id]):
+            webhook_data = WebhookRequest(
+                batch_id=batch_id,
+                results=results,
+                summary={
+                    "total_companies": processed_count,
+                    "total_cities": len(cities_to_process),
+                    "target_companies": len([r for r in results if r.recommendation == "TARGET"]),
+                    "skipped_companies": len([r for r in results if "SKIP" in r.recommendation])
+                },
+                timestamp=datetime.now().isoformat()
+            )
+            
+            await send_webhook(webhook_data)
         
         # Clean up
         if batch_id in active_searches:
