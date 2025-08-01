@@ -127,6 +127,68 @@ class InstantlyManager:
             logger.error(f"Error pausing campaign {campaign_id}: {e}")
             return False
 
+    def get_leads_for_campaign(self, campaign_id: str) -> List[Dict[str, Any]]:
+        """Get leads for a specific campaign"""
+        try:
+            url = f"{self.base_url}/api/v2/leads/list"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            # Filter leads by campaign ID
+            payload = {
+                "limit": 1000,  # Get up to 1000 leads
+                "campaign_id": campaign_id
+            }
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Extract leads from the 'items' field as per API documentation
+                if isinstance(data, dict) and 'items' in data:
+                    leads = data['items']
+                    logger.info(f"✅ Successfully retrieved {len(leads)} leads for campaign {campaign_id}")
+                else:
+                    logger.error(f"Unexpected response structure: {type(data)}")
+                    return []
+                
+                # Ensure leads is a list
+                if not isinstance(leads, list):
+                    logger.error(f"Expected list of leads, got: {type(leads)}")
+                    return []
+                
+                # Enhance with additional data based on API schema
+                for lead in leads:
+                    if isinstance(lead, dict):
+                        # Map API fields to dashboard fields
+                        lead['name'] = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
+                        lead['company'] = lead.get('company_name', 'N/A')
+                        lead['title'] = lead.get('job_title', 'N/A')
+                        lead['email'] = lead.get('email', 'N/A')
+                        lead['score'] = lead.get('pl_value_lead', 'Medium')  # Use lead value as score
+                        lead['status'] = self._get_status_text(lead.get('status', 1))
+                        lead['campaign_name'] = lead.get('campaign', 'N/A')
+                        lead['website'] = lead.get('website', 'N/A')
+                        
+                        # Extract LinkedIn URL from custom variables (payload field)
+                        payload = lead.get('payload', {})
+                        if isinstance(payload, dict):
+                            lead['linkedin_url'] = payload.get('linkedin_url', '')
+                        else:
+                            lead['linkedin_url'] = ''
+                
+                return leads
+            else:
+                logger.error(f"Failed to get leads for campaign {campaign_id}: {response.status_code} - {response.text}")
+                return []
+            
+        except Exception as e:
+            logger.error(f"Error getting leads for campaign {campaign_id}: {e}")
+            return []
+
     def get_all_leads(self) -> List[Dict[str, Any]]:
         """Get all leads for dashboard display using the correct POST /api/v2/leads/list endpoint"""
         try:
@@ -136,9 +198,9 @@ class InstantlyManager:
                 "Content-Type": "application/json"
             }
             
-            # Use POST with empty body to get all leads (increase limit to get more)
+            # Use POST with empty body to get all leads (no limit)
             payload = {
-                "limit": 100  # Get up to 100 leads instead of default 10
+                "limit": 1000  # Get up to 1000 leads (effectively no limit for most use cases)
             }
             
             response = requests.post(url, headers=headers, json=payload, timeout=30)

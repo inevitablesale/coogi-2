@@ -631,6 +631,72 @@
         .hidden {
             display: none;
         }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 0;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 1200px;
+            max-height: 80vh;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+
+        .close {
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close:hover {
+            opacity: 0.7;
+        }
+
+        .modal-body {
+            padding: 30px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .campaign-info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .leads-container {
+            overflow-x: auto;
+        }
     </style>
 </head>
 <body>
@@ -745,34 +811,7 @@
             </div>
         </div>
 
-        <!-- Lead Management -->
-        <div class="leads-section">
-            <div class="instantly-header">
-                <h2>👥 Lead Management</h2>
-                <button class="btn btn-primary" onclick="refreshLeads()">🔄 Refresh</button>
-            </div>
-            
-            <table class="leads-table" id="leadsTable">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Company</th>
-                        <th>Title</th>
-                        <th>Email</th>
-                        <th>LinkedIn</th>
-                        <th>Score</th>
-                        <th>Campaign</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="leadsTableBody">
-                    <tr>
-                        <td colspan="9">Loading leads...</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+
 
         <!-- Recent Activity -->
         <div class="recent-activity">
@@ -784,6 +823,42 @@
                         <div class="activity-title">Dashboard loaded</div>
                         <div class="activity-time">Just now</div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Campaign Leads Modal -->
+    <div id="campaignLeadsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Campaign Leads</h2>
+                <span class="close" onclick="closeCampaignLeadsModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="campaign-info" id="campaignInfo">
+                    <!-- Campaign details will be loaded here -->
+                </div>
+                <div class="leads-container">
+                    <table class="leads-table" id="modalLeadsTable">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Company</th>
+                                <th>Title</th>
+                                <th>Email</th>
+                                <th>LinkedIn</th>
+                                <th>Score</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalLeadsTableBody">
+                            <tr>
+                                <td colspan="8">Loading leads...</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -1342,12 +1417,6 @@
                 loadCampaigns(),
                 loadInstantlyStats()
             ]);
-            
-            // Only load leads if there are active campaigns
-            const campaignsGrid = document.getElementById('campaignsGrid');
-            if (campaignsGrid && !campaignsGrid.innerHTML.includes('No campaigns found')) {
-                await loadLeads();
-            }
         }
 
         // Load campaigns
@@ -1399,7 +1468,7 @@
                     </div>
                     
                     <div class="campaign-actions">
-                        <button class="btn btn-sm btn-info" onclick="viewCampaign('${campaign.id}')">👁️ View</button>
+                        <button class="btn btn-sm btn-info" onclick="viewCampaignLeads('${campaign.id}', '${campaign.name}')">👥 View Leads</button>
                         <button class="btn btn-sm btn-success" onclick="activateCampaign('${campaign.id}')">▶️ Activate</button>
                         <button class="btn btn-sm btn-warning" onclick="pauseCampaign('${campaign.id}')">⏸️ Pause</button>
                     </div>
@@ -1407,25 +1476,40 @@
             `).join('');
         }
 
-        // Load leads
-        async function loadLeads() {
+        // View campaign leads in modal
+        async function viewCampaignLeads(campaignId, campaignName) {
             try {
-                const response = await fetch(`${RAILWAY_API}/instantly-leads`);
+                // Show modal
+                const modal = document.getElementById('campaignLeadsModal');
+                const modalTitle = document.getElementById('modalTitle');
+                const campaignInfo = document.getElementById('campaignInfo');
+                const leadsTableBody = document.getElementById('modalLeadsTableBody');
+                
+                modalTitle.textContent = `${campaignName} - Leads`;
+                campaignInfo.innerHTML = `<strong>Campaign ID:</strong> ${campaignId}`;
+                leadsTableBody.innerHTML = '<tr><td colspan="8">Loading leads...</td></tr>';
+                modal.style.display = 'block';
+                
+                // Fetch leads for this campaign
+                const response = await fetch(`${RAILWAY_API}/instantly-campaigns/${campaignId}/leads`);
                 if (response.ok) {
-                    const leads = await response.json();
-                    renderLeads(leads);
+                    const data = await response.json();
+                    renderModalLeads(data.leads);
+                } else {
+                    leadsTableBody.innerHTML = '<tr><td colspan="8">Error loading leads</td></tr>';
                 }
             } catch (error) {
-                console.error('Error loading leads:', error);
+                console.error('Error loading campaign leads:', error);
+                document.getElementById('modalLeadsTableBody').innerHTML = '<tr><td colspan="8">Error loading leads</td></tr>';
             }
         }
 
-        // Render leads
-        function renderLeads(leads) {
-            const leadsTableBody = document.getElementById('leadsTableBody');
+        // Render leads in modal
+        function renderModalLeads(leads) {
+            const leadsTableBody = document.getElementById('modalLeadsTableBody');
             
             if (!leads || leads.length === 0) {
-                leadsTableBody.innerHTML = '<tr><td colspan="8">No leads found</td></tr>';
+                leadsTableBody.innerHTML = '<tr><td colspan="8">No leads found for this campaign</td></tr>';
                 return;
             }
             
@@ -1446,7 +1530,6 @@
                             ${Math.round(lead.score * 100)}%
                         </span>
                     </td>
-                    <td>${lead.campaign_name || 'N/A'}</td>
                     <td>${lead.status || 'N/A'}</td>
                     <td>
                         <button class="btn btn-sm btn-info" onclick="viewLead('${lead.id}')">👁️</button>
@@ -1454,6 +1537,12 @@
                     </td>
                 </tr>
             `).join('');
+        }
+
+        // Close campaign leads modal
+        function closeCampaignLeadsModal() {
+            const modal = document.getElementById('campaignLeadsModal');
+            modal.style.display = 'none';
         }
 
         // Load Instantly stats
@@ -1625,10 +1714,6 @@
         // Refresh functions
         function refreshCampaigns() {
             loadCampaigns();
-        }
-
-        function refreshLeads() {
-            loadLeads();
         }
 
         function refreshInstantlyData() {
