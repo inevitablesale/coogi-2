@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import os
@@ -80,6 +80,33 @@ rate_limiter = RateLimiter(max_requests=20, time_window=60)
 
 # Global search cancellation tracking
 active_searches = {}  # batch_id -> cancellation flag
+
+# User authentication
+async def get_current_user(authorization: Optional[str] = Header(None)):
+    """Get current user from authorization header"""
+    if not authorization:
+        # For now, return a default user ID for development
+        # In production, this would validate the JWT token
+        return {"user_id": "default_user", "email": "default@example.com"}
+    
+    try:
+        # In production, validate JWT token here
+        # For now, extract user info from header if present
+        if authorization.startswith("Bearer "):
+            token = authorization.replace("Bearer ", "")
+            # Simple token parsing for development
+            if token == "default_token":
+                return {"user_id": "default_user", "email": "default@example.com"}
+            else:
+                # Assume token contains user info in format "user_id:email"
+                parts = token.split(":")
+                if len(parts) == 2:
+                    return {"user_id": parts[0], "email": parts[1]}
+        
+        return {"user_id": "default_user", "email": "default@example.com"}
+    except Exception as e:
+        logger.error(f"Error parsing authorization header: {e}")
+        return {"user_id": "default_user", "email": "default@example.com"}
 
 # Real-time logging to Supabase
 async def log_to_supabase(batch_id: str, message: str, level: str = "info", company: str = None, 
@@ -1354,7 +1381,7 @@ async def receive_webhook_results(request: WebhookRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/process-jobs-background")
-async def process_jobs_background(request: JobSearchRequest):
+async def process_jobs_background(request: JobSearchRequest, current_user: Dict = Depends(get_current_user)):
     """Process jobs in background and send results via webhook"""
     try:
         # Debug logging
@@ -1377,6 +1404,8 @@ async def process_jobs_background(request: JobSearchRequest):
         try:
             agent_data = {
                 "batch_id": batch_id,
+                "user_id": current_user["user_id"],
+                "user_email": current_user["email"],
                 "query": request.query,
                 "hours_old": request.hours_old,
                 "enforce_salary": request.enforce_salary,
@@ -1478,27 +1507,29 @@ async def get_active_searches():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/agents")
-async def get_agents():
+async def get_agents(current_user: Dict = Depends(get_current_user)):
     """Get all agents from Supabase"""
     try:
         # Get all agents from agent_analytics table
-        result = supabase.table("agent_analytics").select("*").order("start_time", desc=True).limit(50).execute()
+        result = supabase.table("agent_analytics").select("*").eq("user_id", current_user["user_id"]).order("start_time", desc=True).limit(50).execute()
         
         agents = []
         for agent in result.data:
-            agents.append({
-                "batch_id": agent["batch_id"],
-                "query": agent["query"],
-                "status": agent["status"],
-                "start_time": agent["start_time"],
-                "end_time": agent.get("end_time"),
-                "total_cities": agent["total_cities"],
-                "processed_cities": agent["processed_cities"],
-                "processed_companies": agent["processed_companies"],
-                "total_jobs_found": agent["total_jobs_found"],
-                "hours_old": agent["hours_old"],
-                "create_campaigns": agent["create_campaigns"]
-            })
+                            agents.append({
+                    "batch_id": agent["batch_id"],
+                    "user_id": agent.get("user_id", "unknown"),
+                    "user_email": agent.get("user_email", "unknown"),
+                    "query": agent["query"],
+                    "status": agent["status"],
+                    "start_time": agent["start_time"],
+                    "end_time": agent.get("end_time"),
+                    "total_cities": agent["total_cities"],
+                    "processed_cities": agent["processed_cities"],
+                    "processed_companies": agent["processed_companies"],
+                    "total_jobs_found": agent["total_jobs_found"],
+                    "hours_old": agent["hours_old"],
+                    "create_campaigns": agent["create_campaigns"]
+                })
         
         return {
             "agents": agents,

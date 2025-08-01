@@ -922,11 +922,20 @@
                 console.log('🚀 Starting agent with request:', requestBody);
                 console.log('📡 Sending to Edge Function:', `${EDGE_FUNCTIONS_BASE}/start-agent`);
                 
+                // Get current user info (for now, use a default user)
+                const currentUser = {
+                    user_id: 'user_' + Date.now(), // Generate unique user ID
+                    email: 'user@example.com'
+                };
+                
+                // Create user token in format "user_id:email"
+                const userToken = `${currentUser.user_id}:${currentUser.email}`;
+                
                 const response = await fetch(`${EDGE_FUNCTIONS_BASE}/start-agent`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${SUPABASE_API_KEY}`
+                        'Authorization': `Bearer ${userToken}`
                     },
                     body: JSON.stringify(requestBody)
                 });
@@ -1228,7 +1237,20 @@
         // Load active agents from Supabase
         async function loadActiveAgents() {
             try {
-                const response = await fetch(`${RAILWAY_API}/agents`);
+                // Get current user info (for now, use a default user)
+                const currentUser = {
+                    user_id: 'user_' + Date.now(), // Generate unique user ID
+                    email: 'user@example.com'
+                };
+                
+                // Create user token in format "user_id:email"
+                const userToken = `${currentUser.user_id}:${currentUser.email}`;
+                
+                const response = await fetch(`${RAILWAY_API}/agents`, {
+                    headers: {
+                        'Authorization': `Bearer ${userToken}`
+                    }
+                });
                 if (response.ok) {
                     const data = await response.json();
                     
