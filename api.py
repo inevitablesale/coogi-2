@@ -1478,8 +1478,12 @@ async def process_jobs_background(request: JobSearchRequest, current_user: Dict 
             }
             
             # Insert agent into Supabase
-            result = supabase.table("agents").insert(agent_data).execute()
-            logger.info(f"✅ Agent saved to Supabase: {batch_id}")
+            try:
+                result = supabase.table("agents").insert(agent_data).execute()
+                logger.info(f"✅ Agent saved to Supabase: {batch_id}")
+            except Exception as table_error:
+                logger.warning(f"Agents table may not exist yet: {table_error}")
+                logger.info(f"⚠️ Agent {batch_id} will be processed but not saved to database")
             
         except Exception as e:
             logger.error(f"❌ Error saving agent to Supabase: {e}")
@@ -1574,9 +1578,17 @@ async def get_agents(current_user: Dict = Depends(get_current_user)):
         
         # Get all agents from agents table
         logger.info(f"Querying agents table for user_id: {current_user['user_id']}")
-        result = supabase.table("agents").select("*").eq("user_id", current_user["user_id"]).order("start_time", desc=True).limit(50).execute()
-        
-        logger.info(f"Query result: {result}")
+        try:
+            result = supabase.table("agents").select("*").eq("user_id", current_user["user_id"]).order("start_time", desc=True).limit(50).execute()
+            logger.info(f"Query result: {result}")
+        except Exception as table_error:
+            logger.warning(f"Agents table may not exist yet: {table_error}")
+            # Return empty result if table doesn't exist
+            return {
+                "agents": [],
+                "total_agents": 0,
+                "message": "No agents found. Create your first agent to get started!"
+            }
         
         agents = []
         for agent in result.data:
