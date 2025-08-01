@@ -437,28 +437,88 @@
                 }
                 
                 const data = await response.json();
-                const contactLogs = data.logs?.filter(log => log.message?.includes('contact') || log.message?.includes('found')) || [];
+                // Filter logs that contain contact information
+                const contactLogs = data.logs?.filter(log => {
+                    if (!log.message) return false;
+                    // Look for logs that contain contact details
+                    return log.message.includes('contact') || 
+                           log.message.includes('found') || 
+                           log.message.includes('name:') ||
+                           log.message.includes('title:') ||
+                           log.message.includes('company:');
+                }) || [];
                 
                 const container = document.getElementById('contactsContainer');
                 if (contactLogs.length > 0) {
-                    container.innerHTML = `
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Time</th>
-                                    <th>Contact Info</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${contactLogs.map(log => `
+                    // Extract structured contact information
+                    const contacts = [];
+                    contactLogs.forEach(log => {
+                        const message = log.message;
+                        
+                        // Try to extract contact information using various patterns
+                        const patterns = [
+                            // Pattern: "name: John Doe, title: Manager, company: ABC Corp"
+                            /name:\s*([^,]+),\s*title:\s*([^,]+),\s*company:\s*([^,\n]+)/i,
+                            // Pattern: "Found contact: John Doe - Manager at ABC Corp"
+                            /Found contact:\s*([^-]+)\s*-\s*([^a]+)\s*at\s*([^,\n]+)/i,
+                            // Pattern: "Contact: John Doe, Title: Manager, Company: ABC Corp"
+                            /Contact:\s*([^,]+),\s*Title:\s*([^,]+),\s*Company:\s*([^,\n]+)/i,
+                            // Pattern: "Name: John Doe, Title: Manager, Company: ABC Corp"
+                            /Name:\s*([^,]+),\s*Title:\s*([^,]+),\s*Company:\s*([^,\n]+)/i
+                        ];
+                        
+                        for (const pattern of patterns) {
+                            const match = message.match(pattern);
+                            if (match) {
+                                const fullName = match[1].trim();
+                                const title = match[2].trim();
+                                const company = match[3].trim();
+                                
+                                // Split full name into first and last name
+                                const nameParts = fullName.split(' ');
+                                const firstName = nameParts[0] || '';
+                                const lastName = nameParts.slice(1).join(' ') || '';
+                                
+                                contacts.push({
+                                    firstName,
+                                    lastName,
+                                    title,
+                                    company,
+                                    timestamp: log.timestamp
+                                });
+                                break; // Use first matching pattern
+                            }
+                        }
+                    });
+                    
+                    if (contacts.length > 0) {
+                        container.innerHTML = `
+                            <table class="data-table">
+                                <thead>
                                     <tr>
-                                        <td>${new Date(log.timestamp).toLocaleString()}</td>
-                                        <td>${log.message}</td>
+                                        <th>Time</th>
+                                        <th>First Name</th>
+                                        <th>Last Name</th>
+                                        <th>Title</th>
+                                        <th>Company</th>
                                     </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    `;
+                                </thead>
+                                <tbody>
+                                    ${contacts.map(contact => `
+                                        <tr>
+                                            <td>${new Date(contact.timestamp).toLocaleString()}</td>
+                                            <td>${contact.firstName}</td>
+                                            <td>${contact.lastName}</td>
+                                            <td>${contact.title}</td>
+                                            <td>${contact.company}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        `;
+                    } else {
+                        container.innerHTML = '<div class="loading">No structured contact information found</div>';
+                    }
                 } else {
                     container.innerHTML = '<div class="loading">No contacts found</div>';
                 }
