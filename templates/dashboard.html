@@ -425,62 +425,7 @@
         .log-warning { color: #fbd38d; }
         .log-error { color: #feb2b2; }
 
-        /* Recent Activity */
-        .recent-activity {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 30px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            grid-column: 1 / -1;
-        }
 
-        .recent-activity h2 {
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-bottom: 20px;
-            color: #2d3748;
-        }
-
-        .activity-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .activity-item {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            padding: 15px;
-            background: rgba(255, 255, 255, 0.6);
-            border-radius: 12px;
-            border-left: 4px solid #667eea;
-        }
-
-        .activity-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.25rem;
-        }
-
-        .activity-content {
-            flex: 1;
-        }
-
-        .activity-title {
-            font-weight: 600;
-            color: #2d3748;
-        }
-
-        .activity-time {
-            font-size: 0.875rem;
-            color: #718096;
-        }
 
         /* Instantly.ai Integration */
         .instantly-section {
@@ -918,19 +863,7 @@
 
 
 
-        <!-- Recent Activity -->
-        <div class="recent-activity">
-            <h2>📈 Recent Activity</h2>
-            <div class="activity-list" id="activityList">
-                <div class="activity-item">
-                    <div class="activity-icon">📊</div>
-                    <div class="activity-content">
-                        <div class="activity-title">Dashboard loaded</div>
-                        <div class="activity-time">Just now</div>
-                    </div>
-                </div>
-            </div>
-        </div>
+
     </div>
 
     <!-- Campaign Leads Modal -->
@@ -1064,7 +997,6 @@
             await Promise.all([
                 loadAgentTemplates(),
                 loadDashboardStats(),
-                loadRecentActivity(),
                 loadActiveAgents()  // Load existing agents from Supabase
             ]);
             
@@ -1136,32 +1068,7 @@
             document.getElementById('successRate').textContent = `${Math.round((dashboardStats.avg_success_rate || 0) * 100)}%`;
         }
 
-        // Load recent activity
-        async function loadRecentActivity() {
-            try {
-                const response = await fetch(`${RAILWAY_API}/recent-activity`);
-                if (response.ok) {
-                    const activities = await response.json();
-                    renderRecentActivity(activities);
-                }
-            } catch (error) {
-                console.error('Error loading activity:', error);
-            }
-        }
 
-        // Render recent activity
-        function renderRecentActivity(activities) {
-            const activityList = document.getElementById('activityList');
-            activityList.innerHTML = activities.map(activity => `
-                <div class="activity-item">
-                    <div class="activity-icon">🤖</div>
-                    <div class="activity-content">
-                        <div class="activity-title">${activity.query} agent ${activity.batch_status}</div>
-                        <div class="activity-time">${formatTimeAgo(activity.start_time)}</div>
-                    </div>
-                </div>
-            `).join('');
-        }
 
         // Toast Notification System
         function showToast(title, message, type = 'info', duration = 5000) {
