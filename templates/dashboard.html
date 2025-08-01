@@ -691,7 +691,7 @@
         <div class="instantly-section">
             <div class="instantly-header">
                 <h2>📧 Instantly.ai Campaigns</h2>
-                <button class="btn btn-primary" onclick="refreshCampaigns()">🔄 Refresh</button>
+                <button class="btn btn-primary" onclick="refreshInstantlyData()">🔄 Refresh</button>
             </div>
             
             <div class="instantly-stats">
@@ -793,12 +793,14 @@
                 loadAgentTemplates(),
                 loadDashboardStats(),
                 loadRecentActivity(),
-                loadInstantlyData(),
                 loadActiveAgents()  // Load existing agents from Supabase
             ]);
             
-            // Start monitoring (reduced frequency to prevent excessive calls)
-            setInterval(updateDashboard, 15000); // Check every 15 seconds instead of 5
+            // Load Instantly data only once on page load
+            await loadInstantlyData();
+            
+            // Start monitoring with reduced frequency and selective updates
+            setInterval(updateDashboard, 30000); // Check every 30 seconds instead of 15
         }
 
         // Load agent templates
@@ -936,43 +938,33 @@
                 
                 console.log('✅ Agent creation response:', result);
                 
-                if (result.status === 'processing') {
-                    // Edge Function started the agent, but we need to poll for the actual batch_id
-                    // For now, create a temporary agent entry
-                    const tempBatchId = `temp_${Date.now()}`;
+                if (result.status === 'processing' && result.batch_id) {
+                    // Agent started successfully with batch_id
+                    const batchId = result.batch_id;
                     
-                    activeAgents.set(tempBatchId, {
+                    activeAgents.set(batchId, {
                         query: query,
-                        batchId: tempBatchId,
-                        status: 'starting',
+                        batchId: batchId,
+                        status: 'processing',
                         startTime: new Date(),
-                        jobsFound: 0
+                        jobsFound: result.jobs_found || 0
                     });
                     
-                    // Start polling for the actual agent
-                    pollForAgentCreation(query, tempBatchId);
+                    // Start monitoring this agent
+                    startAgentMonitoring(batchId);
+                    
+                    // Update UI immediately
+                    updateAgentsDisplay();
+                    loadDashboardStats();
                     
                     // Show success message
-                    alert(`✅ Agent creation started!\n\nQuery: ${query}\nStatus: Processing...`);
+                    alert(`✅ Agent started successfully!\n\nQuery: ${query}\nBatch ID: ${batchId}\nJobs Found: ${result.jobs_found || 0}`);
+                    
+                    // Clear form
+                    document.getElementById('agentForm').reset();
                 } else {
-                    throw new Error('Failed to start agent creation');
+                    throw new Error('Failed to start agent creation - no batch_id returned');
                 }
-                
-                // Start monitoring this agent
-                startAgentMonitoring(batchId);
-                
-                // Update UI immediately
-                updateAgentsDisplay();
-                loadDashboardStats();
-                
-                // Show success message
-                console.log('🎉 Agent added to UI:', batchId);
-                
-                // Show success alert
-                alert(`✅ Agent started successfully!\n\nQuery: ${query}\nBatch ID: ${batchId}\nJobs Found: ${result.jobs_found || 0}`);
-                
-                // Clear form
-                document.getElementById('agentForm').reset();
                 
             } catch (error) {
                 console.error('Error starting agent:', error);
@@ -1133,7 +1125,7 @@
 
         // Start monitoring for specific agent
         function startAgentMonitoring(batchId) {
-            const interval = setInterval(() => checkAgentStatus(batchId), 10000); // Check every 10 seconds instead of 5
+            const interval = setInterval(() => checkAgentStatus(batchId), 30000); // Check every 30 seconds instead of 10
             statusIntervals.set(batchId, interval);
         }
 
@@ -1209,7 +1201,7 @@
                         updateAgentsDisplay();
                     }
                 }
-            }, 1000); // Poll every second
+            }, 3000); // Poll every 3 seconds instead of 1
         }
 
         // Load active agents from Supabase
@@ -1248,23 +1240,33 @@
             }
         }
 
-        // Update dashboard
+        // Update dashboard - only update essential data
         async function updateDashboard() {
             await Promise.all([
                 loadDashboardStats(),
-                loadRecentActivity(),
-                loadInstantlyData(),
                 loadActiveAgents()  // Keep active agents updated
             ]);
+            
+            // Only update Instantly data every 2 minutes to reduce API calls
+            const now = Date.now();
+            if (!window.lastInstantlyUpdate || (now - window.lastInstantlyUpdate) > 120000) {
+                await loadInstantlyData();
+                window.lastInstantlyUpdate = now;
+            }
         }
 
-        // Load Instantly.ai data
+        // Load Instantly.ai data - optimized to reduce API calls
         async function loadInstantlyData() {
             await Promise.all([
                 loadCampaigns(),
-                loadLeads(),
                 loadInstantlyStats()
             ]);
+            
+            // Only load leads if there are active campaigns
+            const campaignsGrid = document.getElementById('campaignsGrid');
+            if (campaignsGrid && !campaignsGrid.innerHTML.includes('No campaigns found')) {
+                await loadLeads();
+            }
         }
 
         // Load campaigns
@@ -1512,6 +1514,10 @@
 
         function refreshLeads() {
             loadLeads();
+        }
+
+        function refreshInstantlyData() {
+            loadInstantlyData();
         }
 
         // Utility functions

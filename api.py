@@ -552,26 +552,26 @@ async def search_jobs(request: JobSearchRequest):
                             try:
                                 # Create leads from Hunter.io emails
                                 leads = []
-                                for email in hunter_emails:
+                                for email_info in hunter_emails:
                                     lead = {
-                                        "name": "Hiring Manager",
-                                        "email": email,
+                                        "email": email_info["email"],
                                         "company": company,
                                         "job_title": job_title,
-                                        "job_url": job_url,
-                                        "title": "Hiring Manager",
-                                        "company_website": domain,
-                                        "score": 0.8,
-                                        "hunter_emails": hunter_emails
+                                        "name": email_info["name"],
+                                        "title": email_info["title"],
+                                        "source": "hunter_io"
                                     }
                                     leads.append(lead)
+                                    await log_to_supabase(batch_id, f"📝 Created lead for {company}: {email_info['name']} ({email_info['title']}) - {email_info['email']}", "info", company)
                                 
-                                # Create campaign
-                                campaign_name = request.campaign_name or f"Immediate_{company.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                                campaign_id = instantly_manager.create_recruiting_campaign(
-                                    leads=leads,
-                                    campaign_name=campaign_name
-                                )
+                                # Create campaign using InstantlyManager
+                                from utils.instantly_manager import InstantlyManager
+                                instantly_manager = InstantlyManager()
+                                
+                                campaign_name = f"{company} - {job_title} Campaign"
+                                await log_to_supabase(batch_id, f"🚀 Step 3c: Creating Instantly campaign for {company} with {len(leads)} leads", "info", company)
+                                
+                                campaign_id = instantly_manager.create_recruiting_campaign(leads, campaign_name)
                                 
                                 if campaign_id:
                                     campaigns_created.append(campaign_id)
@@ -1373,15 +1373,11 @@ async def process_jobs_background(request: JobSearchRequest):
         # Mark search as active
         active_searches[batch_id] = False  # False = not cancelled
         
-        # Parse query and search jobs
+        # Parse query for background processing
         search_params = job_scraper.parse_query(request.query)
-        jobs = job_scraper.search_jobs(search_params, max_results=50)
         
-        if not jobs:
-            raise HTTPException(status_code=404, detail="No jobs found")
-        
-        # Process jobs in background (async)
-        asyncio.create_task(process_jobs_background_task(batch_id, jobs, request))
+        # Process jobs in background (async) - will search jobs per city
+        asyncio.create_task(process_jobs_background_task(batch_id, [], request))
         
         return {
             "status": "processing",
@@ -1454,139 +1450,266 @@ async def get_active_searches():
         raise HTTPException(status_code=500, detail=str(e))
 
 async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request: JobSearchRequest):
-    """Background task to process jobs and send webhook results"""
+    """Background task to process jobs with city-by-city flow: City → Companies → Contacts → Next City"""
     try:
         results = []
         processed_count = 0
         
         # Log start of processing
-        await log_to_supabase(batch_id, f"🚀 Starting job search processing for {len(jobs)} jobs", "info")
+        await log_to_supabase(batch_id, f"🚀 Starting city-by-city processing for query: {request.query}", "info")
         
-        # Process jobs in batches with rate limiting
-        max_jobs_per_batch = 5
-        total_jobs = len(jobs)
+        # Get search parameters for city-by-city processing
+        search_params = job_scraper.parse_query(request.query)
+        await log_to_supabase(batch_id, f"📋 Parsed search parameters: {search_params}", "info")
         
-        for batch_start in range(0, total_jobs, max_jobs_per_batch):
+        # Define cities to process (for now, just top 5 cities for testing)
+        cities_to_process = ["New York, NY", "Los Angeles, CA", "Chicago, IL", "Houston, TX", "San Francisco, CA"]
+        await log_to_supabase(batch_id, f"🏙️ Will process {len(cities_to_process)} cities: {', '.join(cities_to_process)}", "info")
+        
+        for city_index, city in enumerate(cities_to_process):
             # Check if search has been cancelled
             if batch_id in active_searches and active_searches[batch_id]:
                 await log_to_supabase(batch_id, "🚫 Search was cancelled, stopping processing", "warning")
                 break
             
-            batch_end = min(batch_start + max_jobs_per_batch, total_jobs)
-            batch_jobs = jobs[batch_start:batch_end]
+            await log_to_supabase(batch_id, f"🏙️ Processing city {city_index + 1}/{len(cities_to_process)}: {city}", "info")
             
-            await log_to_supabase(batch_id, f"📦 Processing batch {batch_start//max_jobs_per_batch + 1} ({len(batch_jobs)} jobs)", "info")
-            
-            # Process current batch
-            for job in batch_jobs:
-                # Check for cancellation before each job
-                if batch_id in active_searches and active_searches[batch_id]:
-                    await log_to_supabase(batch_id, "🚫 Search was cancelled, stopping processing", "warning")
-                    break
+            try:
+                # Step 1: Search jobs in this city
+                await log_to_supabase(batch_id, f"🔍 Step 1: Searching jobs in {city} for query: {request.query}", "info")
                 
-                company = job.get('company', '')
-                job_title = job.get('title', '')
+                city_jobs = job_scraper._call_jobspy_api(
+                    search_term=search_params.get("search_term", request.query),
+                    location=city,
+                    hours_old=request.hours_old,
+                    job_type=search_params.get("job_type", "fulltime"),
+                    is_remote=search_params.get("is_remote", True),
+                    site_name=search_params.get("site_name", ["indeed", "linkedin", "zip_recruiter", "google", "glassdoor"]),
+                    results_wanted=50,  # Limit per city for faster processing
+                    offset=0,
+                    distance=25,
+                    easy_apply=False,
+                    country_indeed="us",
+                    google_search_term="",
+                    linkedin_fetch_description=True,
+                    verbose=False
+                )
                 
-                await log_to_supabase(batch_id, f"🔍 Analyzing company: {company} - {job_title}", "info", company)
+                await log_to_supabase(batch_id, f"✅ Step 1 Complete: Found {len(city_jobs)} jobs in {city}", "success")
                 
-                # Skip enterprise companies
-                enterprise_companies = ["google", "microsoft", "amazon", "apple"]
-                if company and any(enterprise in company.lower() for enterprise in enterprise_companies):
-                    await log_to_supabase(batch_id, f"⏭️ Skipping enterprise company: {company}", "info", company)
-                    continue
+                # Step 2: Process companies from this city
+                processed_companies = set()
+                city_companies = []
                 
-                # Analyze company
-                try:
-                    contacts, has_ta_team, employee_roles, company_found = contact_finder.find_contacts(
-                        company=company,
-                        role_hint=job.get('title', ''),
-                        keywords=job_scraper.extract_keywords(job.get('description', '')),
-                        linkedin_company_url=job.get('linkedin_company_url')
-                    )
+                # Extract unique companies from jobs
+                for job in city_jobs:
+                    company = job.get('company', '')
+                    if company and company not in processed_companies:
+                        processed_companies.add(company)
+                        city_companies.append({
+                            'company': company,
+                            'job': job
+                        })
+                
+                await log_to_supabase(batch_id, f"📊 Step 2: Found {len(city_companies)} unique companies in {city}", "info")
+                
+                # Process each company in the city
+                for company_index, company_data in enumerate(city_companies):
+                    # Check for cancellation before each company
+                    if batch_id in active_searches and active_searches[batch_id]:
+                        await log_to_supabase(batch_id, "🚫 Search was cancelled, stopping processing", "warning")
+                        break
                     
-                    await log_to_supabase(batch_id, f"📊 Found {len(contacts)} contacts, TA team: {has_ta_team}", "info", company)
+                    company = company_data['company']
+                    job = company_data['job']
+                    job_title = job.get('title', '')
                     
-                    # Hunter.io email discovery
-                    if not has_ta_team and company_found:
-                        await log_to_supabase(batch_id, f"📡 Attempting Hunter.io lookup for: {company}", "info", company)
+                    # Check if company has already been analyzed in previous batches
+                    try:
+                        existing_analysis = supabase.table("company_analysis").select("*").eq("company", company).order("timestamp", desc=True).limit(1).execute()
                         
-                        try:
-                            hunter_emails = contact_finder.find_hunter_emails_for_target_company(
-                                company=company,
-                                job_title=job_title,
-                                employee_roles=employee_roles,
-                                company_website=job.get('company_website')
-                            )
+                        if existing_analysis.data:
+                            existing = existing_analysis.data[0]
+                            await log_to_supabase(batch_id, f"⏭️ Skipping {company} - already analyzed in batch {existing['batch_id']} (recommendation: {existing['recommendation']})", "info", company)
+                            continue
+                    except Exception as e:
+                        await log_to_supabase(batch_id, f"⚠️ Error checking existing analysis for {company}: {str(e)}", "warning", company)
+                    
+                    await log_to_supabase(batch_id, f"🏢 Step 2: Processing company {company_index + 1}/{len(city_companies)}: {company} in {city}", "info", company)
+                    
+                    # Step 2a: Check blacklist
+                    await log_to_supabase(batch_id, f"⚫ Step 2a: Checking blacklist for {company}", "info", company)
+                    
+                    # Skip enterprise companies
+                    enterprise_companies = ["google", "microsoft", "amazon", "apple"]
+                    if company and any(enterprise in company.lower() for enterprise in enterprise_companies):
+                        await log_to_supabase(batch_id, f"⏭️ Step 2a: Skipping enterprise company: {company} (blacklisted)", "info", company)
+                        continue
+                    
+                    await log_to_supabase(batch_id, f"✅ Step 2a: {company} passed blacklist check", "success", company)
+                    
+                    # Step 2b: Domain finding
+                    await log_to_supabase(batch_id, f"🌐 Step 2b: Finding domain for {company}", "info", company)
+                    company_website = job.get('company_website')
+                    if company_website:
+                        await log_to_supabase(batch_id, f"✅ Step 2b: Found website: {company_website}", "success", company)
+                    else:
+                        await log_to_supabase(batch_id, f"⚠️ Step 2b: No website found for {company}", "warning", company)
+                    
+                    # Step 2c: LinkedIn company page resolution
+                    await log_to_supabase(batch_id, f"🔗 Step 2c: Resolving LinkedIn page for {company}", "info", company)
+                    
+                    # Step 3: Find contacts for this company
+                    await log_to_supabase(batch_id, f"👥 Step 3: Finding contacts for {company}", "info", company)
+                    
+                    try:
+                        contacts, has_ta_team, employee_roles, company_found = contact_finder.find_contacts(
+                            company=company,
+                            role_hint=job.get('title', ''),
+                            keywords=job_scraper.extract_keywords(job.get('description', '')),
+                            company_website=company_website
+                        )
+                        
+                        await log_to_supabase(batch_id, f"📊 Step 3: Found {len(contacts)} contacts, TA team: {has_ta_team} for {company}", "info", company)
+                        
+                        # Step 3a: RapidAPI calls logging
+                        await log_to_supabase(batch_id, f"📡 Step 3a: RapidAPI calls completed for {company}", "info", company)
+                        
+                        # Step 3b: Hunter.io email discovery
+                        hunter_emails = []
+                        if not has_ta_team and company_found:
+                            await log_to_supabase(batch_id, f"🎯 Step 3b: Attempting Hunter.io lookup for {company} (no TA team found)", "info", company)
                             
-                            if hunter_emails:
-                                await log_to_supabase(batch_id, f"✅ Found {len(hunter_emails)} Hunter.io emails for {company}", "success", company)
+                            try:
+                                hunter_emails = contact_finder.find_hunter_emails_for_target_company(
+                                    company=company,
+                                    job_title=job_title,
+                                    employee_roles=employee_roles,
+                                    company_website=company_website
+                                )
                                 
-                                # Create Instantly campaign if requested
-                                if request.create_campaigns:
-                                    await log_to_supabase(batch_id, f"🚀 Creating Instantly campaign for {company}", "info", company)
-                                    # Campaign creation logic would go here
-                            else:
-                                await log_to_supabase(batch_id, f"⚠️ No Hunter.io emails found for {company}", "warning", company)
+                                if hunter_emails:
+                                    await log_to_supabase(batch_id, f"✅ Step 3b: Found {len(hunter_emails)} Hunter.io emails for {company}", "success", company)
+                                else:
+                                    await log_to_supabase(batch_id, f"⚠️ Step 3b: No Hunter.io emails found for {company}", "warning", company)
+                                    
+                            except Exception as e:
+                                await log_to_supabase(batch_id, f"❌ Step 3b: Hunter.io error for {company}: {str(e)}", "error", company)
+                        else:
+                            await log_to_supabase(batch_id, f"⏭️ Step 3b: Skipping Hunter.io for {company} (has TA team or company not found)", "info", company)
+                        
+                        # Step 3c: Instantly campaign creation
+                        if request.create_campaigns and hunter_emails:
+                            await log_to_supabase(batch_id, f"🚀 Step 3c: Creating Instantly campaign for {company}", "info", company)
+                            
+                            try:
+                                # Create leads for Instantly
+                                leads = []
+                                for email_info in hunter_emails:
+                                    lead = {
+                                        "email": email_info["email"],
+                                        "company": company,
+                                        "job_title": job_title,
+                                        "name": email_info["name"],
+                                        "title": email_info["title"],
+                                        "source": "hunter_io"
+                                    }
+                                    
+                                    # Add LinkedIn URL if available from Hunter.io response
+                                    if email_info.get("linkedin_url"):
+                                        lead["linkedin_url"] = email_info["linkedin_url"]
+                                        await log_to_supabase(batch_id, f"📝 Added LinkedIn URL for {email_info['name']}: {email_info['linkedin_url']}", "info", company)
+                                    
+                                    leads.append(lead)
+                                    await log_to_supabase(batch_id, f"📝 Created lead for {company}: {email_info['name']} ({email_info['title']}) - {email_info['email']}", "info", company)
                                 
-                        except Exception as e:
-                            await log_to_supabase(batch_id, f"❌ Hunter.io error for {company}: {str(e)}", "error", company)
+                                # Create campaign using InstantlyManager
+                                from utils.instantly_manager import InstantlyManager
+                                instantly_manager = InstantlyManager()
+                                
+                                campaign_name = f"{company} - {job_title} Campaign"
+                                await log_to_supabase(batch_id, f"🚀 Step 3c: Creating Instantly campaign for {company} with {len(leads)} leads", "info", company)
+                                
+                                campaign_id = instantly_manager.create_recruiting_campaign(leads, campaign_name)
+                                
+                                if campaign_id:
+                                    campaigns_created.append(campaign_id)
+                                    leads_added += len(hunter_emails)
+                                    await log_to_supabase(batch_id, f"✅ Step 3c: Instantly campaign created for {company} (ID: {campaign_id})", "success", company, job_title, job_url, "instantly_success")
+                                    tracker.save_instantly_campaign(company, campaign_id, campaign_name, len(hunter_emails))
+                                else:
+                                    await log_to_supabase(batch_id, f"❌ Step 3c: Failed to create Instantly campaign for {company}", "error", company, job_title, job_url, "instantly_error")
+                                    tracker.save_instantly_campaign(company, error="Campaign creation failed")
+                                    
+                            except Exception as e:
+                                await log_to_supabase(batch_id, f"❌ Step 3c: Error creating Instantly campaign for {company}: {str(e)}", "error", company, job_title, job_url, "instantly_error")
+                                tracker.save_instantly_campaign(company, error=str(e))
+                        
+                        elif request.create_campaigns:
+                            await log_to_supabase(batch_id, f"⏭️ Step 3c: Skipping Instantly campaign for {company} (no Hunter emails)", "info", company)
+                        
+                        # Create result
+                        result = WebhookResult(
+                            company=company,
+                            job_title=job_title,
+                            job_url=job.get('job_url', ''),
+                            has_ta_team=has_ta_team if has_ta_team is not None else False,
+                            contacts_found=len(contacts),
+                            top_contacts=contacts[:3] if contacts else [],
+                            recommendation="TARGET" if not has_ta_team else "SKIP - Has TA team",
+                            hunter_emails=[email_info["email"] for email_info in hunter_emails] if hunter_emails else [],
+                            timestamp=datetime.now().isoformat()
+                        )
+                        
+                        results.append(result)
+                        processed_count += 1
+                        
+                        await log_to_supabase(batch_id, f"✅ Step 3 Complete: Finished analysis for {company} in {city}", "success", company)
+                        
+                    except Exception as e:
+                        await log_to_supabase(batch_id, f"❌ Step 3 Error: Error analyzing {company}: {str(e)}", "error", company)
                     
-                    # Create result
-                    result = WebhookResult(
-                        company=company,
-                        job_title=job_title,
-                        job_url=job.get('job_url', ''),
-                        has_ta_team=has_ta_team,
-                        contacts_found=len(contacts),
-                        top_contacts=contacts[:3] if contacts else [],
-                        recommendation="TARGET" if not has_ta_team else "SKIP - Has TA team",
-                        hunter_emails=hunter_emails if 'hunter_emails' in locals() else [],
-                        timestamp=datetime.now().isoformat()
-                    )
+                    # Add 3-second delay between companies (except for the last company in the city)
+                    if company_index < len(city_companies) - 1:
+                        await log_to_supabase(batch_id, f"⏳ Waiting 3 seconds before next company...", "info")
+                        await asyncio.sleep(3)
+                
+                await log_to_supabase(batch_id, f"✅ City Complete: Finished processing {city} - {len(processed_companies)} companies analyzed", "success")
+                
+                # Rate limiting between cities
+                if city_index < len(cities_to_process) - 1:
+                    await log_to_supabase(batch_id, f"⏳ Waiting 2 seconds before next city...", "info")
+                    await asyncio.sleep(2)
                     
-                    results.append(result)
-                    processed_count += 1
-                    
-                    await log_to_supabase(batch_id, f"✅ Completed analysis for {company}", "success", company)
-                    
-                except Exception as e:
-                    await log_to_supabase(batch_id, f"❌ Error analyzing {company}: {str(e)}", "error", company)
-            
-            # Check for cancellation before sending webhook
-            if batch_id in active_searches and active_searches[batch_id]:
-                await log_to_supabase(batch_id, "🚫 Search was cancelled, stopping processing", "warning")
-                break
-            
-            # Send webhook for this batch
-            webhook_data = WebhookRequest(
-                batch_id=batch_id,
-                results=results,
-                summary={
-                    "total_processed": processed_count,
-                    "total_jobs": total_jobs,
-                    "batch_number": batch_start // max_jobs_per_batch + 1
-                },
-                timestamp=datetime.now().isoformat()
-            )
-            
-            # Send webhook (in production, this would be to your webhook URL)
-            await send_webhook(webhook_data)
-            
-            await log_to_supabase(batch_id, f"📤 Sent webhook for batch {batch_start//max_jobs_per_batch + 1}", "info")
-            
-            # Wait between batches
-            if batch_end < total_jobs:
-                await log_to_supabase(batch_id, "⏳ Waiting 60 seconds before next batch...", "info")
-                await asyncio.sleep(60)
+            except Exception as e:
+                await log_to_supabase(batch_id, f"❌ Error processing city {city}: {str(e)}", "error")
+                continue
         
-        # Clean up the search from active_searches
+        # Send final webhook with all results
+        await log_to_supabase(batch_id, f"🎉 Processing complete! Analyzed {processed_count} companies across {len(cities_to_process)} cities", "success")
+        
+        webhook_data = WebhookRequest(
+            batch_id=batch_id,
+            results=results,
+            summary={
+                "total_companies": processed_count,
+                "total_cities": len(cities_to_process),
+                "target_companies": len([r for r in results if r.recommendation == "TARGET"]),
+                "skipped_companies": len([r for r in results if "SKIP" in r.recommendation])
+            },
+            timestamp=datetime.now().isoformat()
+        )
+        
+        await send_webhook(webhook_data)
+        
+        # Clean up
         if batch_id in active_searches:
             del active_searches[batch_id]
-        
-        await log_to_supabase(batch_id, f"🎉 Background processing complete for batch {batch_id}", "success")
-        
+            
     except Exception as e:
-        await log_to_supabase(batch_id, f"❌ Error in background processing: {str(e)}", "error")
+        logger.error(f"Error in background task: {e}")
+        await log_to_supabase(batch_id, f"❌ Background task error: {str(e)}", "error")
+        
         # Clean up on error
         if batch_id in active_searches:
             del active_searches[batch_id]

@@ -44,7 +44,7 @@ serve(async (req) => {
     }
 
     // Forward request to Railway API
-    const agentPromise = fetch(`${API_BASE}/search-jobs`, {
+    const response = await fetch(`${API_BASE}/process-jobs-background`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -60,13 +60,24 @@ serve(async (req) => {
       })
     })
 
-    // Return immediately with 202 Accepted
-    return new Response(JSON.stringify({
-      status: 'processing',
-      message: 'Agent creation started',
-      query
-    }), {
-      status: 202,
+    if (!response.ok) {
+      const errorText = await response.text()
+      return new Response(JSON.stringify({ error: `Railway API error: ${response.status} - ${errorText}` }), {
+        status: response.status,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+      })
+    }
+
+    const result = await response.json()
+
+    // Return the Railway API response
+    return new Response(JSON.stringify(result), {
+      status: 200,
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',

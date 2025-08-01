@@ -229,6 +229,11 @@ class InstantlyManager:
                     "list_id": lead_list_id
                 }
                 
+                # Add LinkedIn URL if available
+                if lead.get("linkedin_url"):
+                    formatted_lead["linkedin_url"] = lead.get("linkedin_url")
+                    logger.info(f"📝 Added LinkedIn URL to main fields: {lead.get('linkedin_url')}")
+                
                 # Add custom fields if they exist
                 custom_fields = {}
                 if lead.get("title"):
@@ -243,9 +248,22 @@ class InstantlyManager:
                     custom_fields["company_website"] = lead.get("company_website")
                 if lead.get("job_title"):
                     custom_fields["target_job_title"] = lead.get("job_title")
+                if lead.get("linkedin_url"):
+                    custom_fields["linkedin_url"] = lead.get("linkedin_url")
                 
+                # Add custom_variables if we have custom fields
                 if custom_fields:
-                    formatted_lead["custom_fields"] = custom_fields
+                    formatted_lead["custom_variables"] = custom_fields
+                
+                # Debug logging
+                logger.info(f"📝 Processing lead: {lead.get('email', 'N/A')}")
+                logger.info(f"📝 Original name: '{lead.get('name', 'N/A')}'")
+                logger.info(f"📝 Original title: '{lead.get('title', 'N/A')}'")
+                logger.info(f"📝 LinkedIn URL: '{lead.get('linkedin_url', 'N/A')}'")
+                logger.info(f"📝 Formatted first_name: '{formatted_lead['first_name']}'")
+                logger.info(f"📝 Formatted last_name: '{formatted_lead['last_name']}'")
+                logger.info(f"📝 Custom fields: {custom_fields}")
+                logger.info(f"📝 Full request payload: {formatted_lead}")
                 
                 response = requests.post(url, headers=headers, json=formatted_lead, timeout=30)
                 
@@ -253,8 +271,10 @@ class InstantlyManager:
                     success_count += 1
                     lead_data = response.json()
                     logger.info(f"✅ Created lead: {lead.get('email', 'N/A')} (ID: {lead_data.get('id', 'N/A')})")
+                    logger.info(f"📝 Instantly API response: {lead_data}")
                 else:
                     logger.error(f"❌ Failed to create lead {lead.get('email', 'N/A')}: {response.status_code} - {response.text}")
+                    logger.error(f"📝 Request payload: {formatted_lead}")
             
             if success_count > 0:
                 logger.info(f"✅ Successfully created {success_count}/{len(leads)} leads in list {lead_list_id}")

@@ -56,6 +56,9 @@ class ContactFinder:
             return [], False, [], False
         
         try:
+            # Step 1: LinkedIn company name resolution
+            logger.info(f"🔗 Step 1: Resolving LinkedIn company name for {company}")
+            
             # Call RapidAPI to get company profile
             profile_url = "https://fresh-linkedin-scraper-api.p.rapidapi.com/api/v1/company/profile"
             headers = {
@@ -71,6 +74,7 @@ class ContactFinder:
                     # Initialize OpenAI client with API key
                     client = openai.OpenAI(api_key=self.openai_api_key)
                     
+                    logger.info(f"🤖 Using OpenAI to resolve LinkedIn name for {company}")
                     response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
@@ -80,9 +84,12 @@ class ContactFinder:
                         temperature=0.1
                     )
                     linkedin_company_name = response.choices[0].message.content.strip()
-                    logger.info(f"OpenAI resolved {company} to LinkedIn name: {linkedin_company_name}")
+                    logger.info(f"✅ OpenAI resolved {company} to LinkedIn name: {linkedin_company_name}")
                 except Exception as e:
-                    logger.warning(f"OpenAI resolution failed for {company}: {e}")
+                    logger.warning(f"❌ OpenAI resolution failed for {company}: {e}")
+            
+            # Step 2: RapidAPI company profile call
+            logger.info(f"📡 Step 2: Calling RapidAPI for company profile: {linkedin_company_name}")
             
             # Get company profile
             profile_response = requests.get(
@@ -92,125 +99,195 @@ class ContactFinder:
                 timeout=15
             )
             
+            logger.info(f"📡 RapidAPI response status: {profile_response.status_code}")
+            
             if profile_response.status_code != 200:
-                logger.warning(f"Company profile not found for {company}: {profile_response.status_code}")
+                logger.warning(f"❌ Company profile not found for {company}: {profile_response.status_code}")
+                logger.warning(f"❌ RapidAPI error response: {profile_response.text}")
                 return [], False, [], False
             
-            profile_data = profile_response.json()
+            try:
+                profile_data = profile_response.json()
+                logger.info(f"📡 RapidAPI response data: {profile_data}")
+            except Exception as e:
+                logger.error(f"❌ Failed to parse RapidAPI response for {company}: {e}")
+                logger.error(f"❌ Raw response: {profile_response.text}")
+                return [], False, [], False
+            
             if not profile_data.get("success", False):
-                logger.warning(f"Company profile API failed for {company}")
+                logger.warning(f"❌ RapidAPI returned error for {company}: {profile_data}")
                 return [], False, [], False
             
-            company_profile = profile_data.get("data", {})
-            company_found = True
+            logger.info(f"✅ Step 2 Complete: RapidAPI profile found for {company}")
             
-            # Get company people - check up to 3 pages for TA team members (reduced for rate limiting)
-            contacts = []
-            has_ta_team = False
+            # Step 3: Extract company information
+            logger.info(f"📊 Step 3: Extracting company information for {company}")
+            
+            company_info = profile_data.get("data", {})
+            logger.info(f"📊 Company info structure: {company_info}")
+            company_found = bool(company_info)
+            
+            if not company_found:
+                logger.warning(f"❌ No company data found for {company}")
+                return [], False, [], False
+            
+            # Extract employee count and other info
+            employee_count = company_info.get("employee_count", 0)
+            industry = company_info.get("industry", "")
+            description = company_info.get("description", "")
+            
+            logger.info(f"📊 Company info - Employees: {employee_count}, Industry: {industry}")
+            
+            # Step 4: Check for TA team using OpenAI
+            logger.info(f"🤖 Step 4: Checking for TA team using OpenAI for {company}")
+            
+            has_ta_team = self.check_ta_team_with_openai(company)
+            
+            if has_ta_team is True:
+                logger.info(f"✅ {company} has TA team (OpenAI)")
+            elif has_ta_team is False:
+                logger.info(f"❌ {company} does not have TA team (OpenAI)")
+            else:
+                logger.info(f"❓ {company} TA team status unknown (OpenAI)")
+            
+            # Step 5: Extract employee roles
+            logger.info(f"👥 Step 5: Extracting employee roles for {company}")
+            
             employee_roles = []
-            all_people = []
+            if company_info.get("employees"):
+                for employee in company_info["employees"][:10]:  # Limit to first 10 employees
+                    title = employee.get("title", "")
+                    if title:
+                        employee_roles.append(title)
             
-            for page in range(1, 4):  # Check up to 3 pages (reduced from 5)
-                people_url = "https://fresh-linkedin-scraper-api.p.rapidapi.com/api/v1/company/people"
-                people_response = requests.get(
-                    people_url,
-                    params={"company": linkedin_company_name, "page": page},
-                    headers=headers,
-                    timeout=15
-                )
-                
-                if people_response.status_code == 200:
-                    people_data = people_response.json()
-                    if people_data.get("success", False):
-                        people = people_data.get("data", [])
-                        all_people.extend(people)
-                        
-                        # Check for dedicated TA team roles only (not general HR)
-                        ta_keywords = ["talent acquisition", "recruiter", "recruitment", "talent acquisition specialist", "recruiting manager", "talent acquisition manager", "recruiter specialist"]
-                        for person in people:
-                            title = person.get("title", "").lower()
-                            if any(keyword in title for keyword in ta_keywords):
-                                has_ta_team = True
-                                employee_roles.append(person.get("title", ""))
-                                logger.info(f"Found dedicated TA role: {person.get('title', '')}")
-                        
-                        # If we found TA team, no need to check more pages
-                        if has_ta_team:
-                            logger.info(f"Found TA team on page {page}, stopping search")
-                            break
-                    else:
-                        # No more data, stop searching
-                        break
-                else:
-                    # API error, stop searching
-                    break
+            logger.info(f"👥 Found {len(employee_roles)} employee roles for {company}")
             
-            # If no TA team found, use top contacts
-            if not has_ta_team:
-                contacts = all_people[:5]  # Top 5 contacts
-                employee_roles = [person.get("title", "") for person in all_people[:10]]
+            # Step 6: Create contact list
+            logger.info(f"📋 Step 6: Creating contact list for {company}")
             
-            logger.info(f"Found {len(all_people)} people across {page} pages at {company}, TA team: {has_ta_team}")
+            contacts = []
+            if company_info.get("employees"):
+                for employee in company_info["employees"][:5]:  # Limit to first 5 employees
+                    contact = {
+                        "name": employee.get("name", ""),
+                        "title": employee.get("title", ""),
+                        "company": company,
+                        "linkedin_url": employee.get("profile_url", ""),
+                        "location": employee.get("location", ""),
+                        "score": 0.5  # Default score
+                    }
+                    contacts.append(contact)
             
-            logger.info(f"📊 Found {len(contacts)} contacts, has_ta_team: {has_ta_team}")
-            return contacts, has_ta_team, employee_roles, company_found
+            logger.info(f"✅ Step 6 Complete: Created {len(contacts)} contacts for {company}")
+            
+            # Extract LinkedIn URL from company info
+            linkedin_url = company_info.get("linkedin_url", "")
+            if linkedin_url:
+                logger.info(f"🔗 Found LinkedIn URL: {linkedin_url}")
+            
+            return contacts, has_ta_team, employee_roles, company_found, linkedin_url
             
         except Exception as e:
-            logger.error(f"Error finding contacts for {company}: {e}")
+            logger.error(f"❌ Error finding contacts for {company}: {e}")
             return [], False, [], False
         
-    def find_hunter_emails_for_target_company(self, company: str, job_title: str = "", employee_roles: List[str] = None, company_website: Optional[str] = None) -> List[str]:
-        """
-        Find emails for a company using Hunter.io
-        """
-        logger.info(f"🔍 Finding Hunter.io emails for: {company}")
+    def find_hunter_emails_for_target_company(self, company: str, job_title: str = "", employee_roles: List[str] = None, company_website: Optional[str] = None) -> List[Dict[str, str]]:
+        """Find emails for a target company using Hunter.io"""
+        logger.info(f"🎯 Starting Hunter.io email discovery for {company}")
         
         if not self.hunter_api_key:
-            logger.warning("No Hunter.io API key provided")
+            logger.warning("❌ No Hunter.io API key configured")
             return []
         
         try:
-            # Use company website if provided, otherwise find domain using Clearout API
-            domain = company_website
-            if not domain:
-                # Find domain using Clearout API
-                domain = self._find_company_domain(company)
-                if not domain:
-                    # Fallback to basic domain generation
-                    domain = f"{company.lower().replace(' ', '').replace('.', '')}.com"
+            # Step 1: Find company domain
+            logger.info(f"🌐 Step 1: Finding domain for {company}")
             
-            # Call Hunter.io API with seniority filter to get better quality emails
-            hunter_url = "https://api.hunter.io/v2/domain-search"
+            domain = None
+            if company_website:
+                domain = self._extract_domain_from_url(company_website)
+                logger.info(f"✅ Found domain from website: {domain}")
+            else:
+                domain = self._find_company_domain(company)
+                if domain:
+                    logger.info(f"✅ Found domain via search: {domain}")
+                else:
+                    logger.warning(f"❌ No domain found for {company}")
+                    return []
+            
+            # Step 2: Search for emails on the domain
+            logger.info(f"📧 Step 2: Searching for emails on {domain}")
+            
+            search_url = "https://api.hunter.io/v2/domain-search"
             params = {
                 "domain": domain,
                 "api_key": self.hunter_api_key,
-                "limit": 10,  # Get more emails to filter from
-                "seniority": "senior,executive"  # Only get senior and executive level emails
+                "limit": 3
             }
             
-            response = requests.get(hunter_url, params=params, timeout=15)
+            response = requests.get(search_url, params=params, timeout=15)
+            logger.info(f"📧 Hunter.io response status: {response.status_code}")
             
             if response.status_code != 200:
-                logger.warning(f"Hunter.io API failed for {company}: {response.status_code}")
+                logger.error(f"❌ Hunter.io API error: {response.status_code}")
                 return []
             
             data = response.json()
-            all_emails = []
+            logger.info(f"📧 Hunter.io raw response: {data}")
+            emails = data.get("data", {}).get("emails", [])
             
-            if data.get("data", {}).get("emails"):
-                for email_data in data["data"]["emails"]:
-                    email = email_data.get("value", "")
-                    if email:
-                        all_emails.append(email)
+            logger.info(f"📧 Found {len(emails)} emails from Hunter.io")
             
-            # Filter out bullshit/generic emails
-            filtered_emails = self._filter_real_person_emails(all_emails)
+            # Step 3: Filter and score emails
+            logger.info(f"🎯 Step 3: Filtering and scoring emails for {company}")
             
-            logger.info(f"📧 Found {len(all_emails)} total emails, {len(filtered_emails)} real person emails for {company}")
-            return filtered_emails
+            filtered_emails = []
+            for i, email in enumerate(emails):
+                logger.info(f"📧 Processing email object {i}: {email}")
+                # Hunter.io uses "value" field for the email address
+                email_data = email.get("value", "") or email.get("email", "") or email.get("address", "")
+                confidence = email.get("confidence", 0)
+                sources = email.get("sources", [])
                 
+                # Get name, title, and LinkedIn URL from Hunter.io
+                first_name = email.get("first_name", "")
+                last_name = email.get("last_name", "")
+                position = email.get("position", "")
+                linkedin_url = email.get("linkedin", "")
+                
+                logger.info(f"📧 Email {i}: {email_data}, Confidence: {confidence}, Sources: {len(sources)}")
+                logger.info(f"📧 Person details: {first_name} {last_name}, Position: {position}, LinkedIn: {linkedin_url}")
+                
+                # Filter for high-confidence emails
+                if confidence > 50 and email_data:
+                    # Create full name
+                    full_name = f"{first_name} {last_name}".strip()
+                    if not full_name:
+                        full_name = "Hiring Manager"  # Fallback if no name provided
+                    
+                    email_info = {
+                        "email": email_data,
+                        "name": full_name,
+                        "title": position if position else "Hiring Manager",
+                        "confidence": confidence
+                    }
+                    
+                    # Add LinkedIn URL if available
+                    if linkedin_url:
+                        email_info["linkedin_url"] = linkedin_url
+                        logger.info(f"✅ Added LinkedIn URL: {linkedin_url}")
+                    
+                    filtered_emails.append(email_info)
+                    logger.info(f"✅ Added email: {email_data} (name: {full_name}, title: {position}, LinkedIn: {linkedin_url})")
+                else:
+                    logger.info(f"❌ Skipped email: {email_data} (confidence: {confidence})")
+            
+            logger.info(f"✅ Step 3 Complete: Filtered to {len(filtered_emails)} high-confidence emails")
+            
+            return filtered_emails
+            
         except Exception as e:
-            logger.error(f"Error finding Hunter.io emails for {company}: {e}")
+            logger.error(f"❌ Hunter.io error for {company}: {e}")
             return []
     
     def _filter_real_person_emails(self, emails: List[str]) -> List[str]:

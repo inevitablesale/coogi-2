@@ -132,7 +132,7 @@ class JobScraper:
         
     def search_jobs(self, search_params: Dict[str, Any] = None, tracker=None, **kwargs) -> List[Dict[str, Any]]:
         """
-        Search for jobs using JobSpy API with city variant strategy
+        Search for jobs using JobSpy API with city-by-city processing
         Accepts either a search_params dictionary or individual parameters
         """
         # Handle both dictionary and individual parameters
@@ -177,9 +177,6 @@ class JobScraper:
         if site_name is None:
             site_name = ["indeed", "linkedin", "zip_recruiter", "google", "glassdoor"]
         
-        all_jobs = []
-        processed_companies = set()
-        
         # Search across multiple US cities for better coverage
         if location.lower() in ["united states", "us", "usa"]:
             # Search across all US cities for comprehensive coverage
@@ -189,56 +186,36 @@ class JobScraper:
             search_locations = [location]
             logger.info(f"🏙️  Searching in {location}")
             
-        # Search each city and collect unique jobs with rate limiting
-        for i, search_location in enumerate(search_locations):
-            try:
-                logger.info(f"🌐 Calling your JobSpy API for {search_term} in {search_location}")
-                
-                # Call JobSpy API for this location
-                city_jobs = self._call_jobspy_api(
-                    search_term=search_term,
-                    location=search_location,
-                    hours_old=hours_old,
-                    job_type=job_type,
-                    is_remote=is_remote,
-                    site_name=site_name,
-                    results_wanted=results_wanted,
-                    offset=offset,
-                    distance=distance,
-                    easy_apply=easy_apply,
-                    country_indeed=country_indeed,
-                    google_search_term=google_search_term,
-                    linkedin_fetch_description=linkedin_fetch_description,
-                    verbose=verbose
-                )
-                
-                # Process jobs from this city
-                for job in city_jobs:
-                    company = job.get('company', '')
-                    job_key = f"{job.get('title', '')}-{company}-{job.get('job_url', '')}"
-                    
-                    if company and job_key not in processed_companies:
-                        processed_companies.add(job_key)
-                        
-                        # Don't do domain finding here - let the main flow handle it per company
-                        # Domain finding will be done in the one-company-at-a-time flow
-                        
-                        all_jobs.append(job)
-                
-                logger.info(f"✅ Your JobSpy API returned {len(city_jobs)} jobs (total: {len(all_jobs)}) for {search_location}")
-                
-                # Rate limiting: Add delay between API calls to avoid overwhelming the server
-                if i < len(search_locations) - 1:  # Don't delay after the last city
-                    delay = 5  # 5 seconds between calls (increased from 2)
-                    logger.info(f"⏳ Rate limiting: Waiting {delay} seconds before next city...")
-                    time.sleep(delay)
-                    
-            except Exception as e:
-                logger.error(f"Error searching in {search_location}: {e}")
-                continue
+        # For now, just return jobs from the first city to test the flow
+        # This will be expanded to process cities one by one
+        search_location = search_locations[0]
+        logger.info(f"🌐 Calling your JobSpy API for {search_term} in {search_location}")
         
-        logger.info(f"📊 Total unique jobs found: {len(all_jobs)}")
-        return all_jobs[:max_results]
+        try:
+            # Call JobSpy API for this location
+            city_jobs = self._call_jobspy_api(
+                search_term=search_term,
+                location=search_location,
+                hours_old=hours_old,
+                job_type=job_type,
+                is_remote=is_remote,
+                site_name=site_name,
+                results_wanted=results_wanted,
+                offset=offset,
+                distance=distance,
+                easy_apply=easy_apply,
+                country_indeed=country_indeed,
+                google_search_term=google_search_term,
+                linkedin_fetch_description=linkedin_fetch_description,
+                verbose=verbose
+            )
+            
+            logger.info(f"✅ Your JobSpy API returned {len(city_jobs)} jobs for {search_location}")
+            return city_jobs[:max_results]
+            
+        except Exception as e:
+            logger.error(f"Error searching in {search_location}: {e}")
+            return []
         
     def _call_jobspy_api(self, search_term: str, location: str, **kwargs) -> List[Dict[str, Any]]:
         """Make actual JobSpy API call to your Railway endpoint with proxy rotation"""
