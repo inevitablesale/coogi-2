@@ -439,7 +439,9 @@ async def debug_environment():
         "SUPABASE_URL": os.getenv("SUPABASE_URL"),
         "SUPABASE_ANON_KEY": "SET" if os.getenv("SUPABASE_ANON_KEY") else "NOT SET",
         "SUPABASE_SERVICE_ROLE_KEY": "SET" if os.getenv("SUPABASE_SERVICE_ROLE_KEY") else "NOT SET",
-        "all_env_vars": dict(os.environ)
+        "current_supabase_key_type": "service_role" if os.getenv("SUPABASE_SERVICE_ROLE_KEY") else "anonymous",
+        "supabase_client_exists": bool(supabase),
+        "all_env_vars": {k: v for k, v in os.environ.items() if "SUPABASE" in k}
     }
 
 @app.get("/debug/agents-table")
