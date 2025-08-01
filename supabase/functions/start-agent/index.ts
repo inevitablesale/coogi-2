@@ -43,25 +43,33 @@ serve(async (req) => {
       })
     }
 
+    // Prepare request body for Railway API
+    const requestBody = {
+      query,
+      hours_old: hours_old || 24,
+      enforce_salary: enforce_salary || false,
+      auto_generate_messages: auto_generate_messages || false,
+      create_campaigns: create_campaigns || true,
+      campaign_name: campaign_name || `${query} Campaign`,
+      min_score: min_score || 0.7
+    }
+    
+    console.log('🔍 Edge Function: Sending request to Railway API:', JSON.stringify(requestBody))
+
     // Forward request to Railway API
     const response = await fetch(`${API_BASE}/process-jobs-background`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        query,
-        hours_old: hours_old || 24,
-        enforce_salary: enforce_salary || false,
-        auto_generate_messages: auto_generate_messages || false,
-        create_campaigns: create_campaigns || true,
-        campaign_name: campaign_name || `${query} Campaign`,
-        min_score: min_score || 0.7
-      })
+      body: JSON.stringify(requestBody)
     })
+
+    console.log('🔍 Edge Function: Railway API response status:', response.status)
 
     if (!response.ok) {
       const errorText = await response.text()
+      console.log('❌ Edge Function: Railway API error:', errorText)
       return new Response(JSON.stringify({ error: `Railway API error: ${response.status} - ${errorText}` }), {
         status: response.status,
         headers: {
@@ -74,8 +82,25 @@ serve(async (req) => {
     }
 
     const result = await response.json()
+    console.log('🔍 Edge Function: Railway API response body:', JSON.stringify(result))
+    
+    // Ensure we have batch_id in the response
+    if (!result.batch_id) {
+      console.error('❌ Edge Function: Railway API response missing batch_id:', result)
+      return new Response(JSON.stringify({ error: 'Railway API response missing batch_id' }), {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+      })
+    }
 
-    // Return the Railway API response
+    console.log('✅ Edge Function: Successfully forwarding response with batch_id:', result.batch_id)
+
+    // Return the full Railway API response (including batch_id)
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: {
@@ -87,7 +112,7 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    console.error('Edge Function error:', error)
+    console.error('❌ Edge Function error:', error)
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: {
