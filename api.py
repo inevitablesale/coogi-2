@@ -1459,16 +1459,31 @@ async def process_jobs_background(request: JobSearchRequest, current_user: Dict 
         # Save agent to Supabase for persistence
         try:
             agent_data = {
-                "name": f"Agent: {request.query[:50]}...",  # Use query as name
-                "prompt": request.query,  # Use query as prompt
+                "batch_id": batch_id,
                 "user_id": current_user["user_id"],
+                "user_email": current_user["email"],
+                "query": request.query,
+                "status": "created",
+                "start_time": datetime.now().isoformat(),
+                "total_cities": 55,
+                "processed_cities": 0,
+                "processed_companies": 0,
+                "total_jobs_found": 0,
+                "hours_old": request.hours_old,
+                "create_campaigns": request.create_campaigns,
+                "enforce_salary": request.enforce_salary,
+                "auto_generate_messages": request.auto_generate_messages,
+                "min_score": request.min_score,
+                # Also include the original columns for compatibility
+                "name": f"Agent: {request.query[:50]}...",
+                "prompt": request.query,
                 "search_lookback_hours": request.hours_old,
-                "max_results": 50,  # Default max results
-                "job_type": "fulltime",  # Default job type
-                "is_remote": True,  # Default to remote
-                "country": "us",  # Default country
+                "max_results": 50,
+                "job_type": "fulltime",
+                "is_remote": True,
+                "country": "us",
                 "site_names": ["indeed", "linkedin", "zip_recruiter", "google", "glassdoor"],
-                "distance": 25,  # Default distance
+                "distance": 25,
                 "is_active": True,
                 "autonomy_level": "semi-automatic",
                 "run_frequency": "Manual"

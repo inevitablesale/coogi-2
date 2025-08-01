@@ -919,8 +919,30 @@
 
         // Get current user token for API calls
         async function getAuthToken() {
-            const { data: { session } } = await supabase.auth.getSession();
-            return session?.access_token;
+            try {
+                const { data: { session }, error } = await supabase.auth.getSession();
+                
+                if (error) {
+                    console.error('❌ Error getting session for token:', error);
+                    // Try to refresh the session
+                    const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
+                    
+                    if (refreshError) {
+                        console.error('❌ Error refreshing session:', refreshError);
+                        // Session is invalid, redirect to login
+                        await supabase.auth.signOut();
+                        window.location.href = '/login';
+                        return null;
+                    }
+                    
+                    return refreshedSession?.access_token;
+                }
+                
+                return session?.access_token;
+            } catch (error) {
+                console.error('❌ Error in getAuthToken:', error);
+                return null;
+            }
         }
 
         // Initialize dashboard
