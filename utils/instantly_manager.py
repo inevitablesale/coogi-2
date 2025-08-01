@@ -127,50 +127,59 @@ class InstantlyManager:
             return False
 
     def get_all_leads(self) -> List[Dict[str, Any]]:
-        """Get all leads for dashboard display"""
+        """Get all leads for dashboard display using the correct API endpoint"""
         try:
-            # Try different endpoints for leads
-            endpoints = [
-                f"{self.base_url}/api/v2/leads",
-                f"{self.base_url}/api/v2/lead-lists",
-                f"{self.base_url}/api/v2/contacts"
-            ]
+            # Use the correct endpoint from the API documentation
+            url = f"{self.base_url}/api/v2/leads"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
             
-            for url in endpoints:
-                headers = {
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                }
-                
-                response = requests.get(url, headers=headers, timeout=30)
-                
-                if response.status_code == 200:
-                    leads = response.json()
-                    
-                    # Ensure leads is a list
-                    if not isinstance(leads, list):
-                        logger.error(f"Expected list of leads, got: {type(leads)}")
-                        continue
-                    
-                    # Enhance with additional data
-                    for lead in leads:
-                        if isinstance(lead, dict):
-                            lead['score'] = lead.get('score', 0.5)
-                            lead['status'] = lead.get('status', 'unknown')
-                            lead['campaign_name'] = lead.get('campaign_name', 'N/A')
-                    
-                    logger.info(f"✅ Successfully retrieved {len(leads)} leads from {url}")
-                    return leads
-                else:
-                    logger.warning(f"Failed to get leads from {url}: {response.status_code}")
+            response = requests.get(url, headers=headers, timeout=30)
             
-            # If all endpoints fail, return empty list
-            logger.error("All lead endpoints failed")
-            return []
+            if response.status_code == 200:
+                leads = response.json()
+                
+                # Ensure leads is a list
+                if not isinstance(leads, list):
+                    logger.error(f"Expected list of leads, got: {type(leads)}")
+                    return []
+                
+                # Enhance with additional data based on API schema
+                for lead in leads:
+                    if isinstance(lead, dict):
+                        # Map API fields to dashboard fields
+                        lead['name'] = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
+                        lead['company'] = lead.get('company_name', 'N/A')
+                        lead['title'] = lead.get('job_title', 'N/A')
+                        lead['email'] = lead.get('email', 'N/A')
+                        lead['score'] = lead.get('pl_value_lead', 'Medium')  # Use lead value as score
+                        lead['status'] = self._get_status_text(lead.get('status', 1))
+                        lead['campaign_name'] = lead.get('campaign', 'N/A')
+                        lead['website'] = lead.get('website', 'N/A')
+                
+                logger.info(f"✅ Successfully retrieved {len(leads)} leads")
+                return leads
+            else:
+                logger.error(f"Failed to get leads: {response.status_code} - {response.text}")
+                return []
             
         except Exception as e:
             logger.error(f"Error getting leads: {e}")
             return []
+    
+    def _get_status_text(self, status_code: int) -> str:
+        """Convert status code to readable text based on API documentation"""
+        status_map = {
+            1: "Active",
+            2: "Paused", 
+            3: "Completed",
+            -1: "Bounced",
+            -2: "Unsubscribed",
+            -3: "Skipped"
+        }
+        return status_map.get(status_code, "Unknown")
     
     def add_leads_to_list(self, lead_list_id: str, leads: List[Dict[str, Any]]) -> bool:
         """
@@ -932,7 +941,7 @@ Contact: {{contact_title}}
 
     # Dashboard Methods
     def get_all_campaigns(self) -> List[Dict[str, Any]]:
-        """Get all campaigns for dashboard display"""
+        """Get all campaigns for dashboard display using the correct API endpoint"""
         try:
             url = f"{self.base_url}/api/v2/campaigns"
             headers = {
@@ -942,27 +951,28 @@ Contact: {{contact_title}}
             
             response = requests.get(url, headers=headers, timeout=30)
             
-            if response.status_code != 200:
-                logger.error(f"Failed to get campaigns: {response.status_code}")
-                return []
+            if response.status_code == 200:
+                campaigns = response.json()
                 
-            campaigns = response.json()
-            
-            # Ensure campaigns is a list
-            if not isinstance(campaigns, list):
-                logger.error(f"Expected list of campaigns, got: {type(campaigns)}")
-                return []
-            
-            # Get analytics for each campaign
-            for campaign in campaigns:
-                if isinstance(campaign, dict):
-                    campaign_id = campaign.get('id')
-                    if campaign_id:
-                        analytics = self.get_campaign_analytics(campaign_id)
-                        if analytics:
-                            campaign.update(analytics)
+                # Ensure campaigns is a list
+                if not isinstance(campaigns, list):
+                    logger.error(f"Expected list of campaigns, got: {type(campaigns)}")
+                    return []
                 
-            return campaigns
+                # Get analytics for each campaign
+                for campaign in campaigns:
+                    if isinstance(campaign, dict):
+                        campaign_id = campaign.get('id')
+                        if campaign_id:
+                            analytics = self.get_campaign_analytics(campaign_id)
+                            if analytics:
+                                campaign.update(analytics)
+                
+                logger.info(f"✅ Successfully retrieved {len(campaigns)} campaigns")
+                return campaigns
+            else:
+                logger.error(f"Failed to get campaigns: {response.status_code} - {response.text}")
+                return []
             
         except Exception as e:
             logger.error(f"Error getting campaigns: {e}")
