@@ -56,11 +56,16 @@ serve(async (req) => {
     
     console.log('🔍 Edge Function: Sending request to Railway API:', JSON.stringify(requestBody))
 
+    // Get authorization header from the original request
+    const authHeader = req.headers.get('Authorization')
+    console.log('🔍 Edge Function: Authorization header present:', !!authHeader)
+    
     // Forward request to Railway API
     const response = await fetch(`${API_BASE}/process-jobs-background`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(authHeader && { 'Authorization': authHeader })
       },
       body: JSON.stringify(requestBody)
     })
