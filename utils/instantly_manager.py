@@ -2,6 +2,7 @@ import os
 import logging
 import requests
 import json
+import time
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 logger = logging.getLogger(__name__)
@@ -1329,3 +1330,70 @@ Contact: {{contact_title}}
         except Exception as e:
             logger.error(f"Error testing account vitals: {e}")
             return {}
+
+    def verify_email(self, email: str, webhook_url: str = None) -> Dict[str, Any]:
+        """Verify an email address using POST /api/v2/email-verification"""
+        try:
+            url = f"{self.base_url}/api/v2/email-verification"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "email": email
+            }
+            
+            # Add webhook URL if provided
+            if webhook_url:
+                payload["webhook_url"] = webhook_url
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"✅ Successfully initiated email verification for {email}")
+                return data
+            else:
+                logger.error(f"Failed to verify email {email}: {response.status_code} - {response.text}")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Error verifying email {email}: {e}")
+            return {}
+
+    def check_email_verification_status(self, email: str) -> Dict[str, Any]:
+        """Check email verification status using GET /api/v2/email-verification/{email}"""
+        try:
+            url = f"{self.base_url}/api/v2/email-verification/{email}"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"✅ Successfully checked verification status for {email}")
+                return data
+            else:
+                logger.error(f"Failed to check verification status for {email}: {response.status_code} - {response.text}")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Error checking verification status for {email}: {e}")
+            return {}
+
+    def verify_multiple_emails(self, emails: List[str], webhook_url: str = None) -> List[Dict[str, Any]]:
+        """Verify multiple email addresses"""
+        results = []
+        for email in emails:
+            result = self.verify_email(email, webhook_url)
+            results.append({
+                "email": email,
+                "verification": result
+            })
+            # Add small delay between requests to avoid rate limiting
+            time.sleep(0.5)
+        return results
