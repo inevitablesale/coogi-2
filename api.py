@@ -1449,6 +1449,7 @@ async def process_jobs_background(request: JobSearchRequest, current_user: Dict 
         logger.info(f"🔍 Request create_campaigns: {request.create_campaigns}")
         logger.info(f"🔍 Request campaign_name: {request.campaign_name}")
         logger.info(f"🔍 Request min_score: {request.min_score}")
+        logger.info(f"🔍 Current user: {current_user}")
         
         # Generate batch ID
         batch_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -1457,6 +1458,7 @@ async def process_jobs_background(request: JobSearchRequest, current_user: Dict 
         active_searches[batch_id] = False  # False = not cancelled
         
         # Save agent to Supabase for persistence
+        logger.info(f"🔍 About to create agent data for batch_id: {batch_id}")
         try:
             agent_data = {
                 "batch_id": batch_id,
@@ -1489,6 +1491,8 @@ async def process_jobs_background(request: JobSearchRequest, current_user: Dict 
                 "autonomy_level": "semi-automatic",
                 "run_frequency": "Manual"
             }
+            
+            logger.info(f"🔍 Created agent_data: {agent_data}")
             
             # Insert agent into Supabase
             try:
