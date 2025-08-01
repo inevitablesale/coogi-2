@@ -1478,7 +1478,7 @@ async def process_jobs_background(request: JobSearchRequest, current_user: Dict 
             }
             
             # Insert agent into Supabase
-            result = supabase.table("agent_analytics").insert(agent_data).execute()
+            result = supabase.table("agents").insert(agent_data).execute()
             logger.info(f"✅ Agent saved to Supabase: {batch_id}")
             
         except Exception as e:
@@ -1572,9 +1572,9 @@ async def get_agents(current_user: Dict = Depends(get_current_user)):
             logger.error("Supabase client not initialized")
             raise HTTPException(status_code=500, detail="Database not available")
         
-        # Get all agents from agent_analytics table
-        logger.info(f"Querying agent_analytics table for user_id: {current_user['user_id']}")
-        result = supabase.table("agent_analytics").select("*").eq("user_id", current_user["user_id"]).order("start_time", desc=True).limit(50).execute()
+        # Get all agents from agents table
+        logger.info(f"Querying agents table for user_id: {current_user['user_id']}")
+        result = supabase.table("agents").select("*").eq("user_id", current_user["user_id"]).order("start_time", desc=True).limit(50).execute()
         
         logger.info(f"Query result: {result}")
         
@@ -1620,7 +1620,7 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
         
         # Update agent status to "processing"
         try:
-            supabase.table("agent_analytics").update({
+            supabase.table("agents").update({
                 "status": "processing",
                 "start_time": datetime.now().isoformat()
             }).eq("batch_id", batch_id).execute()
@@ -1680,8 +1680,8 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                 
                 # Update total jobs found
                 try:
-                    supabase.table("agent_analytics").update({
-                        "total_jobs_found": supabase.table("agent_analytics").select("total_jobs_found").eq("batch_id", batch_id).execute().data[0]["total_jobs_found"] + len(city_jobs)
+                    supabase.table("agents").update({
+                        "total_jobs_found": supabase.table("agents").select("total_jobs_found").eq("batch_id", batch_id).execute().data[0]["total_jobs_found"] + len(city_jobs)
                     }).eq("batch_id", batch_id).execute()
                 except Exception as e:
                     logger.error(f"❌ Error updating total jobs: {e}")
@@ -1855,8 +1855,8 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                         
                         # Update processed companies count
                         try:
-                            supabase.table("agent_analytics").update({
-                                "processed_companies": supabase.table("agent_analytics").select("processed_companies").eq("batch_id", batch_id).execute().data[0]["processed_companies"] + 1
+                            supabase.table("agents").update({
+                                "processed_companies": supabase.table("agents").select("processed_companies").eq("batch_id", batch_id).execute().data[0]["processed_companies"] + 1
                             }).eq("batch_id", batch_id).execute()
                         except Exception as e:
                             logger.error(f"❌ Error updating processed companies: {e}")
@@ -1875,8 +1875,8 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                 
                 # Update processed cities count
                 try:
-                    supabase.table("agent_analytics").update({
-                        "processed_cities": supabase.table("agent_analytics").select("processed_cities").eq("batch_id", batch_id).execute().data[0]["processed_cities"] + 1
+                    supabase.table("agents").update({
+                        "processed_cities": supabase.table("agents").select("processed_cities").eq("batch_id", batch_id).execute().data[0]["processed_cities"] + 1
                     }).eq("batch_id", batch_id).execute()
                 except Exception as e:
                     logger.error(f"❌ Error updating processed cities: {e}")
@@ -1895,11 +1895,11 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
         
         # Update agent status to completed
         try:
-            supabase.table("agent_analytics").update({
+            supabase.table("agents").update({
                 "status": "completed",
                 "end_time": datetime.now().isoformat(),
-                "total_companies_processed": processed_count,
-                "total_cities_processed": len(cities_to_process)
+                "processed_companies": processed_count,
+                "processed_cities": len(cities_to_process)
             }).eq("batch_id", batch_id).execute()
             logger.info(f"✅ Agent {batch_id} marked as completed")
         except Exception as e:
