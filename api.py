@@ -1382,7 +1382,8 @@ async def process_jobs_background(request: JobSearchRequest):
         return {
             "status": "processing",
             "batch_id": batch_id,
-            "jobs_found": len(jobs),
+            "message": "Agent creation started",
+            "query": request.query,
             "webhook_url": f"http://localhost:8000/webhook/results"
         }
         
