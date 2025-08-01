@@ -1491,8 +1491,10 @@ async def process_jobs_background(request: JobSearchRequest, current_user: Dict 
             
             # Insert agent into Supabase
             try:
+                logger.info(f"🔍 Attempting to save agent data: {agent_data}")
                 result = supabase.table("agents").insert(agent_data).execute()
                 logger.info(f"✅ Agent saved to Supabase: {batch_id}")
+                logger.info(f"✅ Insert result: {result.data}")
             except Exception as table_error:
                 logger.warning(f"Agents table may not exist yet: {table_error}")
                 logger.info(f"⚠️ Agent {batch_id} will be processed but not saved to database")
@@ -1591,8 +1593,20 @@ async def get_agents(current_user: Dict = Depends(get_current_user)):
         # Get all agents from agents table
         logger.info(f"Querying agents table for user_id: {current_user['user_id']}")
         try:
+            # First, let's see what agents exist for this user
+            all_agents = supabase.table("agents").select("*").execute()
+            logger.info(f"All agents in table: {all_agents.data}")
+            
+            # Now filter by user_id
             result = supabase.table("agents").select("*").eq("user_id", current_user["user_id"]).order("start_time", desc=True).limit(50).execute()
-            logger.info(f"Query result: {result}")
+            logger.info(f"Query result for user {current_user['user_id']}: {result.data}")
+            
+            # Also check if there are any agents with the batch_id we just created
+            if 'batch_20250801_125402' in str(all_agents.data):
+                logger.info("Found the batch_id in the table!")
+            else:
+                logger.warning("The batch_id was not found in the table")
+                
         except Exception as table_error:
             logger.warning(f"Agents table may not exist yet: {table_error}")
             # Return empty result if table doesn't exist
