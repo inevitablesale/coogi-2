@@ -190,7 +190,7 @@ async def get_login():
     except FileNotFoundError:
         return HTMLResponse(content="""
         <html>
-        <head><title>MindGlimpse Login</title></head>
+        <head><title>Coogi Login</title></head>
         <body>
             <h1>Login Not Found</h1>
             <p>The login template file is missing. Please ensure templates/login.html exists.</p>
@@ -207,7 +207,7 @@ async def get_signup():
     except FileNotFoundError:
         return HTMLResponse(content="""
         <html>
-        <head><title>MindGlimpse Signup</title></head>
+        <head><title>Coogi Signup</title></head>
         <body>
             <h1>Signup Not Found</h1>
             <p>The signup template file is missing. Please ensure templates/signup.html exists.</p>
@@ -224,7 +224,7 @@ async def get_ui():
     except FileNotFoundError:
         return HTMLResponse(content="""
         <html>
-        <head><title>MindGlimpse UI</title></head>
+        <head><title>Coogi UI</title></head>
         <body>
             <h1>UI Not Found</h1>
             <p>The UI template file is missing. Please ensure templates/index.html exists.</p>
@@ -241,7 +241,7 @@ async def get_dashboard():
     except FileNotFoundError:
         return HTMLResponse(content="""
         <html>
-        <head><title>MindGlimpse Dashboard</title></head>
+        <head><title>Coogi Dashboard</title></head>
         <body>
             <h1>Dashboard Not Found</h1>
             <p>The dashboard template file is missing. Please ensure templates/dashboard.html exists.</p>
@@ -258,7 +258,7 @@ async def get_agent_detail():
     except FileNotFoundError:
         return HTMLResponse(content="""
         <html>
-        <head><title>Agent Detail - MindGlimpse</title></head>
+        <head><title>Agent Detail - Coogi</title></head>
         <body>
             <h1>Agent Detail Not Found</h1>
             <p>The agent detail template file is missing. Please ensure templates/agent_detail.html exists.</p>

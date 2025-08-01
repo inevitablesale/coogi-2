@@ -1,4 +1,4 @@
--- MindGlimpse Supabase Schema
+-- Coogi Supabase Schema
 -- Run this in your Supabase SQL editor
 
 -- Create batches table

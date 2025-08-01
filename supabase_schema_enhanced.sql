@@ -1,4 +1,4 @@
--- Enhanced MindGlimpse Supabase Schema
+-- Enhanced Coogi Supabase Schema
 -- Run this in your Supabase SQL editor
 
 -- Create agent_templates table for reusable search configurations

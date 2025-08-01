@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to create Supabase tables for MindGlimpse dashboard and logging
+Script to create Supabase tables for Coogi dashboard and logging
 """
 
 import os
@@ -75,7 +75,7 @@ def test_connection():
         return False
 
 def main():
-    print("🚀 MindGlimpse Supabase Table Setup")
+    print("🚀 Coogi Supabase Table Setup")
     print("=" * 50)
     
     # Test connection

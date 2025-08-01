@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Supabase Database Setup Script
-Creates all tables and views needed for MindGlimpse
+Creates all tables and views needed for Coogi
 """
 
 import os

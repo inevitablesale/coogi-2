@@ -1,1 +1,1 @@
-# Utils package for MindGlimpse API 
+# Utils package for Coogi API 

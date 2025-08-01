@@ -36,7 +36,7 @@ def start_server():
         sys.exit(1)
 
 if __name__ == "__main__":
-    print("=== MindGlimpse Server Startup ===")
+    print("=== Coogi Server Startup ===")
     print(f"Python executable: {sys.executable}")
     print(f"Python version: {sys.version}")
     

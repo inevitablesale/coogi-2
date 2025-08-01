@@ -1,6 +1,6 @@
-# MindGlimpse - Intelligent Job Search & Lead Generation Platform
+# Coogi - Lead Generation Platform for Recruiters
 
-An advanced automated recruiting platform that intelligently searches for jobs, analyzes companies, and generates targeted leads for outreach campaigns.
+An advanced automated platform that helps recruiters secure high-value recruiting contracts by intelligently searching for job opportunities, analyzing companies, and generating targeted leads for outreach campaigns.
 
 ## 🚀 Features
 
@@ -263,7 +263,7 @@ Companies are automatically blacklisted if:
 
 ### Quick Start for Frontend Developers
 
-This section provides complete instructions for connecting your frontend application (React/Next.js) with Supabase to the production MindGlimpse API.
+This section provides complete instructions for connecting your frontend application (React/Next.js) with Supabase to the production Coogi API.
 
 #### 1. Environment Setup
 
@@ -750,4 +750,4 @@ For issues and questions:
 
 ---
 
-**MindGlimpse** - Intelligent job search and lead generation for modern recruiting. 
+**Coogi** - Lead generation platform for recruiters to secure high-value recruiting contracts. 

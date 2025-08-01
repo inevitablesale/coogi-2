@@ -65,7 +65,7 @@ def test_app_creation():
         return False
 
 if __name__ == "__main__":
-    print("🚀 Starting MindGlimpse Startup Test...\n")
+    print("🚀 Starting Coogi Startup Test...\n")
     
     # Test 1: Basic imports
     import_test = test_basic_imports()
