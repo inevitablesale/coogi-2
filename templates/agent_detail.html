@@ -342,7 +342,13 @@
                 }
                 
                 const data = await response.json();
-                const emails = data.logs?.filter(log => log.message?.includes('email') || log.message?.includes('contact')) || [];
+                // Only show logs that contain actual email addresses (with @ symbol)
+                const emails = data.logs?.filter(log => {
+                    if (!log.message) return false;
+                    // Check if the message contains an email address pattern
+                    const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+                    return emailPattern.test(log.message);
+                }) || [];
                 
                 const container = document.getElementById('emailsContainer');
                 if (emails.length > 0) {
@@ -351,16 +357,23 @@
                             <thead>
                                 <tr>
                                     <th>Time</th>
-                                    <th>Message</th>
+                                    <th>Email Found</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                ${emails.map(log => `
-                                    <tr>
-                                        <td>${new Date(log.timestamp).toLocaleString()}</td>
-                                        <td>${log.message}</td>
-                                    </tr>
-                                `).join('')}
+                                ${emails.map(log => {
+                                    // Extract the email address from the message
+                                    const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+                                    const emails = log.message.match(emailPattern) || [];
+                                    const emailList = emails.join(', ');
+                                    
+                                    return `
+                                        <tr>
+                                            <td>${new Date(log.timestamp).toLocaleString()}</td>
+                                            <td>${emailList}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
                             </tbody>
                         </table>
                     `;
