@@ -1260,12 +1260,8 @@
                 loadActiveAgents()  // Keep active agents updated
             ]);
             
-            // Only update Instantly data every 2 minutes to reduce API calls
-            const now = Date.now();
-            if (!window.lastInstantlyUpdate || (now - window.lastInstantlyUpdate) > 120000) {
-                await loadInstantlyData();
-                window.lastInstantlyUpdate = now;
-            }
+            // Instantly data is now only loaded on page load and manual refresh
+            // This significantly reduces API calls
         }
 
         // Load Instantly.ai data - optimized to reduce API calls

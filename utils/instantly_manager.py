@@ -200,6 +200,155 @@ class InstantlyManager:
         }
         return status_map.get(status_code, "Unknown")
     
+    def find_lead_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Find a lead by email address"""
+        try:
+            # Get all leads and search for the email
+            all_leads = self.get_all_leads()
+            for lead in all_leads:
+                if lead.get('email') == email:
+                    return lead
+            return None
+        except Exception as e:
+            logger.error(f"Error finding lead by email {email}: {e}")
+            return None
+
+    def update_lead(self, lead_id: str, updates: Dict[str, Any]) -> bool:
+        """Update an existing lead with new data"""
+        try:
+            url = f"{self.base_url}/api/v2/leads/{lead_id}"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.patch(url, headers=headers, json=updates, timeout=30)
+            
+            if response.status_code == 200:
+                logger.info(f"✅ Updated lead {lead_id}")
+                return True
+            else:
+                logger.error(f"❌ Failed to update lead {lead_id}: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error updating lead {lead_id}: {e}")
+            return False
+
+    def add_or_update_leads_to_list(self, lead_list_id: str, leads: List[Dict[str, Any]]) -> bool:
+        """
+        Add leads to a lead list or update existing ones using the correct /api/v2/leads endpoint
+        """
+        if not self.api_key or not lead_list_id:
+            logger.warning("Missing Instantly API key or lead list ID")
+            return False
+            
+        try:
+            url = f"{self.base_url}/api/v2/leads"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive",
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-origin"
+            }
+            
+            success_count = 0
+            updated_count = 0
+            
+            for lead in leads:
+                email = lead.get("email", "")
+                if not email:
+                    logger.warning(f"⚠️ Skipping lead without email: {lead}")
+                    continue
+                
+                # Check if lead already exists
+                existing_lead = self.find_lead_by_email(email)
+                
+                # Format lead data
+                formatted_lead = {
+                    "email": email,
+                    "first_name": lead.get("name", "").split()[0] if lead.get("name") else "",
+                    "last_name": " ".join(lead.get("name", "").split()[1:]) if lead.get("name") and len(lead.get("name", "").split()) > 1 else "",
+                    "company_name": lead.get("company", ""),
+                    "job_title": lead.get("job_title", ""),
+                    "website": lead.get("company_website", ""),
+                    "list_id": lead_list_id
+                }
+                
+                # Add LinkedIn URL if available
+                if lead.get("linkedin_url"):
+                    formatted_lead["linkedin_url"] = lead.get("linkedin_url")
+                    logger.info(f"📝 Added LinkedIn URL to main fields: {lead.get('linkedin_url')}")
+                
+                # Add custom fields if they exist
+                custom_fields = {}
+                if lead.get("title"):
+                    custom_fields["contact_title"] = lead.get("title")
+                if lead.get("job_url"):
+                    custom_fields["job_url"] = lead.get("job_url")
+                if lead.get("score"):
+                    custom_fields["lead_score"] = str(lead.get("score"))
+                if lead.get("hunter_emails"):
+                    custom_fields["hunter_emails"] = ", ".join(lead.get("hunter_emails", []))
+                if lead.get("company_website"):
+                    custom_fields["company_website"] = lead.get("company_website")
+                if lead.get("job_title"):
+                    custom_fields["target_job_title"] = lead.get("job_title")
+                if lead.get("linkedin_url"):
+                    custom_fields["linkedin_url"] = lead.get("linkedin_url")
+                
+                # Add custom_variables if we have custom fields
+                if custom_fields:
+                    formatted_lead["custom_variables"] = custom_fields
+                
+                if existing_lead:
+                    # Update existing lead
+                    logger.info(f"📝 Updating existing lead: {email}")
+                    if self.update_lead(existing_lead['id'], formatted_lead):
+                        updated_count += 1
+                        logger.info(f"✅ Updated lead: {email}")
+                    else:
+                        logger.error(f"❌ Failed to update lead: {email}")
+                else:
+                    # Create new lead
+                    logger.info(f"📝 Creating new lead: {email}")
+                    logger.info(f"📝 Original name: '{lead.get('name', 'N/A')}'")
+                    logger.info(f"📝 Original title: '{lead.get('title', 'N/A')}'")
+                    logger.info(f"📝 LinkedIn URL: '{lead.get('linkedin_url', 'N/A')}'")
+                    logger.info(f"📝 Formatted first_name: '{formatted_lead['first_name']}'")
+                    logger.info(f"📝 Formatted last_name: '{formatted_lead['last_name']}'")
+                    logger.info(f"📝 Custom fields: {custom_fields}")
+                    logger.info(f"📝 Full request payload: {formatted_lead}")
+                    
+                    response = requests.post(url, headers=headers, json=formatted_lead, timeout=30)
+                    
+                    if response.status_code == 200:
+                        success_count += 1
+                        lead_data = response.json()
+                        logger.info(f"✅ Created lead: {email} (ID: {lead_data.get('id', 'N/A')})")
+                        logger.info(f"📝 Instantly API response: {lead_data}")
+                    else:
+                        logger.error(f"❌ Failed to create lead {email}: {response.status_code} - {response.text}")
+                        logger.error(f"📝 Request payload: {formatted_lead}")
+            
+            total_processed = success_count + updated_count
+            if total_processed > 0:
+                logger.info(f"✅ Successfully processed {total_processed} leads (created: {success_count}, updated: {updated_count}) in list {lead_list_id}")
+                return True
+            else:
+                logger.error(f"❌ Failed to process any leads in list {lead_list_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error adding/updating leads to list: {e}")
+            return False
+
     def add_leads_to_list(self, lead_list_id: str, leads: List[Dict[str, Any]]) -> bool:
         """
         Add leads to a lead list using the correct /api/v2/leads endpoint
@@ -756,10 +905,10 @@ Contact: {{contact_title}}
             lead_list_id = self.find_or_create_lead_list(company_type)
             
             if lead_list_id:
-                # Step 2: Add leads to the list (always add, since lists are persistent)
-                success = self.add_leads_to_list(lead_list_id, company_leads)
+                # Step 2: Add or update leads to the list (check for existing leads)
+                success = self.add_or_update_leads_to_list(lead_list_id, company_leads)
                 if success:
-                    logger.info(f"✅ Added {len(company_leads)} leads to list {lead_list_id}")
+                    logger.info(f"✅ Added/Updated {len(company_leads)} leads to list {lead_list_id}")
                 
                 # Step 3: Find or create campaign for this company type
                 campaign_id = self.find_or_create_campaign(company_type, company_campaign_name, template_data, sender_email, sender_name, lead_list_id)
