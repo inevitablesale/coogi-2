@@ -35,11 +35,14 @@ import httpx
 try:
     from supabase import create_client, Client
     supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_ANON_KEY")
+    
+    # Try service role key first (bypasses RLS), then fallback to anonymous key
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
     
     if supabase_url and supabase_key:
         supabase: Client = create_client(supabase_url, supabase_key)
-        logger.info("✅ Supabase client initialized")
+        key_type = "service_role" if os.getenv("SUPABASE_SERVICE_ROLE_KEY") else "anonymous"
+        logger.info(f"✅ Supabase client initialized with {key_type} key")
     else:
         supabase = None
         logger.warning("⚠️  Supabase credentials not found - database operations disabled")
