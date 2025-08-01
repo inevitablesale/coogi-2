@@ -1599,12 +1599,25 @@ async def get_agents(current_user: Dict = Depends(get_current_user)):
         logger.info(f"Querying agents table for user_id: {current_user['user_id']}")
         try:
             # First, let's see what agents exist for this user
+            logger.info(f"🔍 Querying all agents from table...")
             all_agents = supabase.table("agents").select("*").execute()
             logger.info(f"All agents in table: {all_agents.data}")
+            logger.info(f"Total agents found: {len(all_agents.data) if all_agents.data else 0}")
             
             # Now filter by user_id - use created_at for ordering since start_time might be null
+            logger.info(f"🔍 Filtering by user_id: {current_user['user_id']}")
             result = supabase.table("agents").select("*").eq("user_id", current_user["user_id"]).order("created_at", desc=True).limit(50).execute()
             logger.info(f"Query result for user {current_user['user_id']}: {result.data}")
+            logger.info(f"Filtered agents found: {len(result.data) if result.data else 0}")
+            
+            # Check if there are any agents at all
+            if all_agents.data and len(all_agents.data) > 0:
+                logger.info(f"🔍 Sample agent data: {all_agents.data[0] if all_agents.data else 'No data'}")
+                # Check what user_ids exist
+                user_ids = [agent.get('user_id') for agent in all_agents.data if agent.get('user_id')]
+                logger.info(f"🔍 User IDs in table: {user_ids}")
+            else:
+                logger.warning("🔍 No agents found in table at all")
             
             # Also check if there are any agents with the batch_id we just created
             if 'batch_20250801_125402' in str(all_agents.data):
