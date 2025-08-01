@@ -12,167 +12,160 @@
         }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #2d3748;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8fafc;
+            color: #1a202c;
+            line-height: 1.6;
         }
 
         .container {
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
         }
 
         .header {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 30px;
-            margin-bottom: 30px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
         }
 
-        .header h1 {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 10px;
+        .agent-title {
+            font-size: 24px;
+            font-weight: 600;
             color: #2d3748;
+            margin-bottom: 10px;
         }
 
-        .agent-info {
+        .agent-status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status-processing {
+            background: #fed7aa;
+            color: #c05621;
+        }
+
+        .status-completed {
+            background: #9ae6b4;
+            color: #22543d;
+        }
+
+        .status-cancelled {
+            background: #feb2b2;
+            color: #c53030;
+        }
+
+        .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 20px;
-            margin-bottom: 20px;
+            margin: 20px 0;
         }
 
-        .info-card {
-            background: rgba(255, 255, 255, 0.8);
-            border-radius: 12px;
-            padding: 15px;
-            text-align: center;
-        }
-
-        .info-value {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #667eea;
-        }
-
-        .info-label {
-            font-size: 0.875rem;
-            color: #718096;
-            margin-top: 5px;
-        }
-
-        .back-btn {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 10px 20px;
+        .stat-card {
+            background: white;
+            padding: 20px;
             border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
 
-        .back-btn:hover {
-            background: #5a67d8;
-        }
-
-        .content-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-        }
-
-        .section {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 30px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-
-        .section h2 {
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-bottom: 20px;
-            color: #2d3748;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .emails-list, .campaigns-list, .contacts-list, .logs-list {
-            max-height: 400px;
-            overflow-y: auto;
-        }
-
-        .email-item, .campaign-item, .contact-item, .log-item {
-            background: rgba(255, 255, 255, 0.6);
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 10px;
-            border-left: 4px solid #667eea;
-        }
-
-        .email-item {
-            border-left-color: #48bb78;
-        }
-
-        .campaign-item {
-            border-left-color: #ed8936;
-        }
-
-        .contact-item {
-            border-left-color: #4299e1;
-        }
-
-        .log-item {
-            border-left-color: #9f7aea;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.875rem;
-        }
-
-        .log-info { color: #4299e1; }
-        .log-success { color: #48bb78; }
-        .log-warning { color: #ed8936; }
-        .log-error { color: #f56565; }
-
-        .item-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #4c51bf;
             margin-bottom: 8px;
         }
 
-        .item-title {
+        .stat-label {
+            font-size: 14px;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .section {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 18px;
             font-weight: 600;
             color: #2d3748;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
         }
 
-        .item-meta {
-            font-size: 0.75rem;
-            color: #718096;
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: #4c51bf;
+            margin-right: 10px;
+            border-radius: 2px;
         }
 
-        .item-details {
-            font-size: 0.875rem;
+        .logs-container {
+            max-height: 400px;
+            overflow-y: auto;
+            background: #1a202c;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .log-entry {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            margin-bottom: 8px;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .log-info {
+            color: #90cdf4;
+        }
+
+        .log-success {
+            color: #9ae6b4;
+        }
+
+        .log-warning {
+            color: #fbd38d;
+        }
+
+        .log-error {
+            color: #feb2b2;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .data-table th {
+            background: #f7fafc;
+            font-weight: 600;
             color: #4a5568;
         }
-
-        .status-badge {
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
-
-        .status-active { background: #c6f6d5; color: #22543d; }
-        .status-paused { background: #fed7d7; color: #742a2a; }
-        .status-completed { background: #bee3f8; color: #2a4365; }
 
         .loading {
             text-align: center;
@@ -182,299 +175,331 @@
 
         .error {
             background: #fed7d7;
-            color: #742a2a;
+            color: #c53030;
             padding: 15px;
             border-radius: 8px;
-            margin-bottom: 20px;
+            margin: 10px 0;
         }
 
-        .refresh-btn {
-            background: #48bb78;
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            padding: 10px 20px;
+            background: #4c51bf;
             color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            margin-left: 10px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            margin-bottom: 20px;
+            transition: background 0.2s;
         }
 
-        .refresh-btn:hover {
-            background: #38a169;
+        .back-button:hover {
+            background: #434190;
         }
 
-        @media (max-width: 768px) {
-            .content-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .agent-info {
-                grid-template-columns: repeat(2, 1fr);
-            }
+        .back-button::before {
+            content: '←';
+            margin-right: 8px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <button class="back-btn" onclick="window.history.back()">← Back to Dashboard</button>
+        <a href="/dashboard" class="back-button">Back to Dashboard</a>
         
         <div class="header">
-            <h1>🤖 Agent Details</h1>
-            <div class="agent-info" id="agentInfo">
-                <div class="info-card">
-                    <div class="info-value" id="agentQuery">Loading...</div>
-                    <div class="info-label">Search Query</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-value" id="agentStatus">Loading...</div>
-                    <div class="info-label">Status</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-value" id="jobsFound">Loading...</div>
-                    <div class="info-label">Jobs Found</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-value" id="emailsFound">Loading...</div>
-                    <div class="info-label">Emails Found</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-value" id="campaignsCreated">Loading...</div>
-                    <div class="info-label">Campaigns Created</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-value" id="contactsFound">Loading...</div>
-                    <div class="info-label">Contacts Found</div>
-                </div>
+            <div class="agent-title" id="agentTitle">Loading...</div>
+            <div class="agent-status" id="agentStatus">Loading...</div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="totalJobs">-</div>
+                <div class="stat-label">Total Jobs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="processedCities">-</div>
+                <div class="stat-label">Cities Processed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="processedCompanies">-</div>
+                <div class="stat-label">Companies Processed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="runtime">-</div>
+                <div class="stat-label">Runtime</div>
             </div>
         </div>
 
-        <div class="content-grid">
-            <!-- Hunter.io Emails -->
-            <div class="section">
-                <h2>
-                    📧 Hunter.io Emails
-                    <button class="refresh-btn" onclick="loadEmails()">🔄</button>
-                </h2>
-                <div class="emails-list" id="emailsList">
-                    <div class="loading">Loading emails...</div>
-                </div>
+        <div class="section">
+            <div class="section-title">Agent Logs</div>
+            <div class="logs-container" id="logsContainer">
+                <div class="loading">Loading logs...</div>
             </div>
+        </div>
 
-            <!-- Instantly.ai Campaigns -->
-            <div class="section">
-                <h2>
-                    🎯 Instantly.ai Campaigns
-                    <button class="refresh-btn" onclick="loadCampaigns()">🔄</button>
-                </h2>
-                <div class="campaigns-list" id="campaignsList">
-                    <div class="loading">Loading campaigns...</div>
-                </div>
+        <div class="section">
+            <div class="section-title">Emails Found</div>
+            <div id="emailsContainer">
+                <div class="loading">Loading emails...</div>
             </div>
+        </div>
 
-            <!-- Contacts Found -->
-            <div class="section">
-                <h2>
-                    👥 Contacts Found
-                    <button class="refresh-btn" onclick="loadContacts()">🔄</button>
-                </h2>
-                <div class="contacts-list" id="contactsList">
-                    <div class="loading">Loading contacts...</div>
-                </div>
+        <div class="section">
+            <div class="section-title">Campaigns Created</div>
+            <div id="campaignsContainer">
+                <div class="loading">Loading campaigns...</div>
             </div>
+        </div>
 
-            <!-- Processing Logs -->
-            <div class="section">
-                <h2>
-                    📝 Processing Logs
-                    <button class="refresh-btn" onclick="loadLogs()">🔄</button>
-                </h2>
-                <div class="logs-list" id="logsList">
-                    <div class="loading">Loading logs...</div>
-                </div>
+        <div class="section">
+            <div class="section-title">Contacts Found</div>
+            <div id="contactsContainer">
+                <div class="loading">Loading contacts...</div>
             </div>
         </div>
     </div>
 
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script>
-        const API_BASE = 'https://coogi-2-production.up.railway.app';
-        const batchId = new URLSearchParams(window.location.search).get('batch_id');
+        const RAILWAY_API = 'https://coogi-2-production.up.railway.app';
+        const EDGE_FUNCTIONS_BASE = 'https://dbtdplhlatnlzcvdvptn.supabase.co/functions/v1';
+        const SUPABASE_URL = 'https://dbtdplhlatnlzcvdvptn.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRidGRwbGhsYXRubHpjdmR2cHRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI5NDk3MTIsImV4cCI6MjA2ODUyNTcxMn0.xiGfxG3AB5CjQMYjvcvWxi4Got2mY3yWhF_JPQIZaAo';
         
+        // Initialize Supabase client
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Get batch_id from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const batchId = urlParams.get('batch_id');
+
         if (!batchId) {
             document.body.innerHTML = '<div class="container"><div class="error">No batch ID provided</div></div>';
         }
 
-        // Initialize page
-        async function initializePage() {
-            await Promise.all([
-                loadAgentInfo(),
-                loadEmails(),
-                loadCampaigns(),
-                loadContacts(),
-                loadLogs()
-            ]);
+        async function getAuthToken() {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                return session?.access_token;
+            } catch (error) {
+                console.error('Error getting auth token:', error);
+                return null;
+            }
         }
 
-        // Load agent information
         async function loadAgentInfo() {
             try {
-                const response = await fetch(`${API_BASE}/batch/${batchId}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    document.getElementById('agentQuery').textContent = data.batch.query || 'Unknown';
-                    document.getElementById('agentStatus').textContent = data.batch.status || 'Unknown';
-                    document.getElementById('jobsFound').textContent = data.total_results || 0;
-                    
-                    // Count emails, campaigns, contacts from results
-                    const emails = data.results.filter(r => r.hunter_emails && r.hunter_emails.length > 0).length;
-                    const campaigns = data.results.filter(r => r.instantly_campaign_id).length;
-                    const contacts = data.results.filter(r => r.contacts_found > 0).length;
-                    
-                    document.getElementById('emailsFound').textContent = emails;
-                    document.getElementById('campaignsCreated').textContent = campaigns;
-                    document.getElementById('contactsFound').textContent = contacts;
+                const authToken = await getAuthToken();
+                const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+                
+                const response = await fetch(`${RAILWAY_API}/batch/${batchId}`, { headers });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                
+                const data = await response.json();
+                console.log('Agent data:', data);
+                
+                if (data.agent) {
+                    // Update agent info
+                    document.getElementById('agentTitle').textContent = `Agent: ${data.agent.query || 'Unknown'}`;
+                    document.getElementById('agentStatus').textContent = data.agent.status || 'unknown';
+                    document.getElementById('agentStatus').className = `agent-status status-${data.agent.status || 'unknown'}`;
+                    
+                    // Update stats
+                    document.getElementById('totalJobs').textContent = data.agent.total_jobs_found || 0;
+                    document.getElementById('processedCities').textContent = data.agent.processed_cities || 0;
+                    document.getElementById('processedCompanies').textContent = data.agent.processed_companies || 0;
+                    
+                    // Calculate runtime
+                    if (data.agent.start_time) {
+                        const startTime = new Date(data.agent.start_time);
+                        const endTime = data.agent.end_time ? new Date(data.agent.end_time) : new Date();
+                        const runtime = Math.floor((endTime - startTime) / 1000);
+                        const minutes = Math.floor(runtime / 60);
+                        const seconds = runtime % 60;
+                        document.getElementById('runtime').textContent = `${minutes}m ${seconds}s`;
+                    }
+                } else {
+                    throw new Error('No agent data found');
+                }
+                
             } catch (error) {
                 console.error('Error loading agent info:', error);
-                document.getElementById('agentInfo').innerHTML = '<div class="error">Error loading agent information</div>';
+                document.getElementById('agentTitle').textContent = 'Error loading agent';
+                document.getElementById('agentStatus').textContent = 'Error';
+                document.getElementById('agentStatus').className = 'agent-status status-error';
             }
         }
 
-        // Load Hunter.io emails
         async function loadEmails() {
             try {
-                const response = await fetch(`${API_BASE}/batch/${batchId}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    const emailsList = document.getElementById('emailsList');
-                    const emails = data.results.filter(r => r.hunter_emails && r.hunter_emails.length > 0);
-                    
-                    if (emails.length === 0) {
-                        emailsList.innerHTML = '<div class="loading">No emails found</div>';
-                        return;
-                    }
-                    
-                    emailsList.innerHTML = emails.map(result => `
-                        <div class="email-item">
-                            <div class="item-header">
-                                <div class="item-title">${result.company}</div>
-                                <div class="item-meta">${result.hunter_emails.length} emails</div>
-                            </div>
-                            <div class="item-details">
-                                <strong>Emails:</strong> ${result.hunter_emails.join(', ')}
-                            </div>
-                        </div>
-                    `).join('');
+                const response = await fetch(`${RAILWAY_API}/logs/${batchId}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                
+                const data = await response.json();
+                const emails = data.logs?.filter(log => log.message?.includes('email') || log.message?.includes('contact')) || [];
+                
+                const container = document.getElementById('emailsContainer');
+                if (emails.length > 0) {
+                    container.innerHTML = `
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Message</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${emails.map(log => `
+                                    <tr>
+                                        <td>${new Date(log.timestamp).toLocaleString()}</td>
+                                        <td>${log.message}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                } else {
+                    container.innerHTML = '<div class="loading">No emails found</div>';
+                }
+                
             } catch (error) {
                 console.error('Error loading emails:', error);
-                document.getElementById('emailsList').innerHTML = '<div class="error">Error loading emails</div>';
+                document.getElementById('emailsContainer').innerHTML = '<div class="error">Error loading emails</div>';
             }
         }
 
-        // Load Instantly.ai campaigns
         async function loadCampaigns() {
             try {
-                const response = await fetch(`${API_BASE}/batch/${batchId}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    const campaignsList = document.getElementById('campaignsList');
-                    const campaigns = data.results.filter(r => r.instantly_campaign_id);
-                    
-                    if (campaigns.length === 0) {
-                        campaignsList.innerHTML = '<div class="loading">No campaigns found</div>';
-                        return;
-                    }
-                    
-                    campaignsList.innerHTML = campaigns.map(result => `
-                        <div class="campaign-item">
-                            <div class="item-header">
-                                <div class="item-title">${result.company}</div>
-                                <div class="item-meta">Campaign ID: ${result.instantly_campaign_id}</div>
-                            </div>
-                            <div class="item-details">
-                                <strong>Job:</strong> ${result.job_title}<br>
-                                <strong>Contacts:</strong> ${result.contacts_found}<br>
-                                <strong>Recommendation:</strong> ${result.recommendation}
-                            </div>
-                        </div>
-                    `).join('');
+                const response = await fetch(`${RAILWAY_API}/instantly-campaigns`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                
+                const campaigns = await response.json();
+                const agentCampaigns = campaigns.filter(campaign => campaign.batch_id === batchId) || [];
+                
+                const container = document.getElementById('campaignsContainer');
+                if (agentCampaigns.length > 0) {
+                    container.innerHTML = `
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Campaign Name</th>
+                                    <th>Status</th>
+                                    <th>Leads</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${agentCampaigns.map(campaign => `
+                                    <tr>
+                                        <td>${campaign.name || 'Unknown'}</td>
+                                        <td>${campaign.status || 'Unknown'}</td>
+                                        <td>${campaign.leads_count || 0}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                } else {
+                    container.innerHTML = '<div class="loading">No campaigns found for this agent</div>';
+                }
+                
             } catch (error) {
                 console.error('Error loading campaigns:', error);
-                document.getElementById('campaignsList').innerHTML = '<div class="error">Error loading campaigns</div>';
+                document.getElementById('campaignsContainer').innerHTML = '<div class="error">Error loading campaigns</div>';
             }
         }
 
-        // Load contacts
         async function loadContacts() {
             try {
-                const response = await fetch(`${API_BASE}/batch/${batchId}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    const contactsList = document.getElementById('contactsList');
-                    const contacts = data.results.filter(r => r.contacts_found > 0);
-                    
-                    if (contacts.length === 0) {
-                        contactsList.innerHTML = '<div class="loading">No contacts found</div>';
-                        return;
-                    }
-                    
-                    contactsList.innerHTML = contacts.map(result => `
-                        <div class="contact-item">
-                            <div class="item-header">
-                                <div class="item-title">${result.company}</div>
-                                <div class="item-meta">${result.contacts_found} contacts</div>
-                            </div>
-                            <div class="item-details">
-                                <strong>Job:</strong> ${result.job_title}<br>
-                                <strong>Has TA Team:</strong> ${result.has_ta_team ? 'Yes' : 'No'}<br>
-                                <strong>Recommendation:</strong> ${result.recommendation}
-                            </div>
-                        </div>
-                    `).join('');
+                const response = await fetch(`${RAILWAY_API}/logs/${batchId}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                
+                const data = await response.json();
+                const contactLogs = data.logs?.filter(log => log.message?.includes('contact') || log.message?.includes('found')) || [];
+                
+                const container = document.getElementById('contactsContainer');
+                if (contactLogs.length > 0) {
+                    container.innerHTML = `
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Contact Info</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${contactLogs.map(log => `
+                                    <tr>
+                                        <td>${new Date(log.timestamp).toLocaleString()}</td>
+                                        <td>${log.message}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                } else {
+                    container.innerHTML = '<div class="loading">No contacts found</div>';
+                }
+                
             } catch (error) {
                 console.error('Error loading contacts:', error);
-                document.getElementById('contactsList').innerHTML = '<div class="error">Error loading contacts</div>';
+                document.getElementById('contactsContainer').innerHTML = '<div class="error">Error loading contacts</div>';
             }
         }
 
-        // Load processing logs
         async function loadLogs() {
             try {
-                const response = await fetch(`${API_BASE}/logs/${batchId}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    const logsList = document.getElementById('logsList');
-                    const logs = data.logs || [];
-                    
-                    if (logs.length === 0) {
-                        logsList.innerHTML = '<div class="loading">No logs found</div>';
-                        return;
-                    }
-                    
-                    logsList.innerHTML = logs.map(log => `
-                        <div class="log-item log-${log.level || 'info'}">
-                            <div class="item-header">
-                                <div class="item-title">${log.company || 'System'}</div>
-                                <div class="item-meta">${new Date(log.timestamp).toLocaleTimeString()}</div>
-                            </div>
-                            <div class="item-details">${log.message}</div>
+                const response = await fetch(`${RAILWAY_API}/logs/${batchId}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const logs = data.logs || [];
+                
+                const container = document.getElementById('logsContainer');
+                if (logs.length > 0) {
+                    container.innerHTML = logs.map(log => `
+                        <div class="log-entry log-${log.level || 'info'}">
+                            [${new Date(log.timestamp).toLocaleString()}] ${log.message}
                         </div>
                     `).join('');
+                } else {
+                    container.innerHTML = '<div class="loading">No logs found</div>';
                 }
+                
             } catch (error) {
                 console.error('Error loading logs:', error);
-                document.getElementById('logsList').innerHTML = '<div class="error">Error loading logs</div>';
+                document.getElementById('logsContainer').innerHTML = '<div class="error">Error loading logs</div>';
             }
         }
 
-        // Initialize page when loaded
+        async function initializePage() {
+            if (!batchId) return;
+            
+            try {
+                await Promise.all([
+                    loadAgentInfo(),
+                    loadLogs(),
+                    loadEmails(),
+                    loadCampaigns(),
+                    loadContacts()
+                ]);
+            } catch (error) {
+                console.error('Error initializing page:', error);
+            }
+        }
+
+        // Initialize page when DOM is loaded
         document.addEventListener('DOMContentLoaded', initializePage);
     </script>
 </body>
