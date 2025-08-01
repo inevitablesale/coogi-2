@@ -1016,7 +1016,7 @@ Contact: {{contact_title}}
             
             params = {
                 "id": campaign_id,
-                "exclude_total_leads_count": False
+                "exclude_total_leads_count": "false"
             }
             
             response = requests.get(url, headers=headers, params=params, timeout=30)

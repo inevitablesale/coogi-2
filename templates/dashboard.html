@@ -1293,7 +1293,7 @@
                 <div class="campaign-card">
                     <div class="campaign-header">
                         <div class="campaign-title">${campaign.name}</div>
-                        <div class="campaign-status status-${campaign.status.toLowerCase()}">${campaign.status}</div>
+                        <div class="campaign-status status-${getCampaignStatusClass(campaign.status)}">${getCampaignStatusText(campaign.status)}</div>
                     </div>
                     
                     <div class="campaign-stats">
@@ -1406,6 +1406,36 @@
             if (score >= 0.7) return 'high';
             if (score >= 0.4) return 'medium';
             return 'low';
+        }
+
+        // Get campaign status class for styling
+        function getCampaignStatusClass(status) {
+            switch (status) {
+                case 0: return 'draft';
+                case 1: return 'active';
+                case 2: return 'paused';
+                case 3: return 'completed';
+                case 4: return 'running-subsequences';
+                case -99: return 'suspended';
+                case -1: return 'unhealthy';
+                case -2: return 'bounce-protect';
+                default: return 'unknown';
+            }
+        }
+
+        // Get campaign status text
+        function getCampaignStatusText(status) {
+            switch (status) {
+                case 0: return 'Draft';
+                case 1: return 'Active';
+                case 2: return 'Paused';
+                case 3: return 'Completed';
+                case 4: return 'Running Subsequences';
+                case -99: return 'Suspended';
+                case -1: return 'Unhealthy';
+                case -2: return 'Bounce Protect';
+                default: return 'Unknown';
+            }
         }
 
         // Campaign actions
