@@ -33,9 +33,13 @@
             padding: 30px;
             margin-bottom: 30px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-top {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-bottom: 20px;
         }
 
         .header h1 {
@@ -633,7 +637,10 @@
     <div class="container">
         <!-- Header with Stats -->
         <div class="header">
-            <h1>🚀 MindGlimpse Dashboard</h1>
+            <div class="header-top">
+                <h1>🚀 MindGlimpse Dashboard</h1>
+                <button class="btn btn-secondary" onclick="logout()">🚪 Logout</button>
+            </div>
             <div class="stats">
                 <div class="stat-item">
                     <div class="stat-value" id="activeAgents">0</div>
@@ -782,7 +789,13 @@
         </div>
     </div>
 
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script>
+        // Initialize Supabase
+        const SUPABASE_URL = 'https://dbtdplhlatnlzcvdvptn.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRidGRwbGhsYXRubHpjdmR2cHRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI5NDk3MTIsImV4cCI6MjA2ODUyNTcxMn0.U3pnytCxcEoo_bJ';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
         // API Base URLs
         const RAILWAY_API = 'https://coogi-2-production.up.railway.app';
         const SUPABASE_API = 'https://dbtdplhlatnlzcvdvptn.supabase.co';
@@ -800,8 +813,31 @@
             successRate: 0
         };
 
+        // Check authentication
+        async function checkAuth() {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                // User not authenticated, redirect to login
+                window.location.href = '/login';
+                return null;
+            }
+            return user;
+        }
+
+        // Get current user token for API calls
+        async function getAuthToken() {
+            const { data: { session } } = await supabase.auth.getSession();
+            return session?.access_token;
+        }
+
         // Initialize dashboard
         async function initializeDashboard() {
+            // Check authentication first
+            const user = await checkAuth();
+            if (!user) return;
+            
+            console.log('Authenticated user:', user.email);
+            
             await Promise.all([
                 loadAgentTemplates(),
                 loadDashboardStats(),
@@ -922,20 +958,21 @@
                 console.log('🚀 Starting agent with request:', requestBody);
                 console.log('📡 Sending to Edge Function:', `${EDGE_FUNCTIONS_BASE}/start-agent`);
                 
-                // Get current user info (for now, use a default user)
-                const currentUser = {
-                    user_id: 'user_' + Date.now(), // Generate unique user ID
-                    email: 'user@example.com'
-                };
+                // Get current user and token
+                const user = await checkAuth();
+                if (!user) return;
                 
-                // Create user token in format "user_id:email"
-                const userToken = `${currentUser.user_id}:${currentUser.email}`;
+                const authToken = await getAuthToken();
+                if (!authToken) {
+                    console.error('No auth token available');
+                    return;
+                }
                 
                 const response = await fetch(`${EDGE_FUNCTIONS_BASE}/start-agent`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${userToken}`
+                        'Authorization': `Bearer ${authToken}`
                     },
                     body: JSON.stringify(requestBody)
                 });
@@ -1237,18 +1274,19 @@
         // Load active agents from Supabase
         async function loadActiveAgents() {
             try {
-                // Get current user info (for now, use a default user)
-                const currentUser = {
-                    user_id: 'user_' + Date.now(), // Generate unique user ID
-                    email: 'user@example.com'
-                };
+                // Get current user and token
+                const user = await checkAuth();
+                if (!user) return;
                 
-                // Create user token in format "user_id:email"
-                const userToken = `${currentUser.user_id}:${currentUser.email}`;
+                const authToken = await getAuthToken();
+                if (!authToken) {
+                    console.error('No auth token available');
+                    return;
+                }
                 
                 const response = await fetch(`${RAILWAY_API}/agents`, {
                     headers: {
-                        'Authorization': `Bearer ${userToken}`
+                        'Authorization': `Bearer ${authToken}`
                     }
                 });
                 if (response.ok) {
@@ -1607,6 +1645,16 @@
             if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
             if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
             return `${Math.floor(diff / 86400)}d ago`;
+        }
+
+        // Logout function
+        async function logout() {
+            try {
+                await supabase.auth.signOut();
+                window.location.href = '/login';
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
         }
 
         // Event listeners

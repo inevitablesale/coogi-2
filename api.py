@@ -94,14 +94,29 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
         # For now, extract user info from header if present
         if authorization.startswith("Bearer "):
             token = authorization.replace("Bearer ", "")
-            # Simple token parsing for development
-            if token == "default_token":
-                return {"user_id": "default_user", "email": "default@example.com"}
-            else:
-                # Assume token contains user info in format "user_id:email"
-                parts = token.split(":")
-                if len(parts) == 2:
-                    return {"user_id": parts[0], "email": parts[1]}
+            
+            # Try to decode JWT token (Supabase Auth)
+            try:
+                import jwt
+                # Decode without verification for now (in production, verify with Supabase public key)
+                decoded = jwt.decode(token, options={"verify_signature": False})
+                user_id = decoded.get("sub", "unknown")
+                email = decoded.get("email", "unknown@example.com")
+                return {"user_id": user_id, "email": email}
+            except Exception as jwt_error:
+                logger.warning(f"JWT decode failed, trying fallback: {jwt_error}")
+                
+                # Fallback to simple token parsing for development
+                if token == "default_token":
+                    return {"user_id": "default_user", "email": "default@example.com"}
+                else:
+                    # Assume token contains user info in format "user_id:email"
+                    parts = token.split(":")
+                    if len(parts) == 2:
+                        return {"user_id": parts[0], "email": parts[1]}
+                    else:
+                        # If token doesn't match expected format, use it as user_id
+                        return {"user_id": token, "email": f"{token}@example.com"}
         
         return {"user_id": "default_user", "email": "default@example.com"}
     except Exception as e:
@@ -155,6 +170,40 @@ app = FastAPI(
 # Serve static files (CSS, JS, images)
 if os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/login", response_class=HTMLResponse)
+async def get_login():
+    """Serve the login page"""
+    try:
+        with open("templates/login.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="""
+        <html>
+        <head><title>MindGlimpse Login</title></head>
+        <body>
+            <h1>Login Not Found</h1>
+            <p>The login template file is missing. Please ensure templates/login.html exists.</p>
+        </body>
+        </html>
+        """, status_code=404)
+
+@app.get("/signup", response_class=HTMLResponse)
+async def get_signup():
+    """Serve the signup page"""
+    try:
+        with open("templates/signup.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="""
+        <html>
+        <head><title>MindGlimpse Signup</title></head>
+        <body>
+            <h1>Signup Not Found</h1>
+            <p>The signup template file is missing. Please ensure templates/signup.html exists.</p>
+        </body>
+        </html>
+        """, status_code=404)
 
 @app.get("/ui", response_class=HTMLResponse)
 async def get_ui():
