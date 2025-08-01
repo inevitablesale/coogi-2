@@ -1,23 +1,20 @@
--- Check and Populate Agents Table for API Database
--- This script should be run on the Supabase database that the API connects to
+-- Simple Agents Table Setup Script
+-- This script avoids ON CONFLICT issues by using a simpler approach
 
--- 1. Check if agents table exists and its structure
+-- 1. Check current state
+SELECT 'Current table structure:' as info;
 SELECT 
     column_name, 
     data_type, 
-    is_nullable, 
-    column_default 
+    is_nullable 
 FROM information_schema.columns 
 WHERE table_name = 'agents' 
 ORDER BY ordinal_position;
 
--- 2. Check current data in agents table
+SELECT 'Current data count:' as info;
 SELECT COUNT(*) as total_agents FROM agents;
 
--- 3. Show sample data if any exists
-SELECT * FROM agents LIMIT 5;
-
--- 4. Create agents table if it doesn't exist
+-- 2. Create agents table if it doesn't exist
 CREATE TABLE IF NOT EXISTS agents (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     batch_id TEXT,
@@ -54,7 +51,7 @@ CREATE TABLE IF NOT EXISTS agents (
     run_frequency TEXT DEFAULT 'Manual'
 );
 
--- 5. Add missing columns if they don't exist
+-- 3. Add missing columns
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS batch_id TEXT;
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS user_email TEXT;
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'created';
@@ -72,16 +69,16 @@ ALTER TABLE agents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS start_time TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS query TEXT;
 
--- 6. Create indexes for better performance
+-- 4. Create indexes
 CREATE INDEX IF NOT EXISTS idx_agents_user_id ON agents(user_id);
 CREATE INDEX IF NOT EXISTS idx_agents_batch_id ON agents(batch_id);
 CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
 CREATE INDEX IF NOT EXISTS idx_agents_created_at ON agents(created_at);
 
--- 7. Enable Row Level Security (RLS)
+-- 5. Enable RLS
 ALTER TABLE agents ENABLE ROW LEVEL SECURITY;
 
--- 8. Create RLS policies for user-specific access
+-- 6. Create RLS policies
 DROP POLICY IF EXISTS "Users can view their own agents" ON agents;
 CREATE POLICY "Users can view their own agents" ON agents
     FOR SELECT USING (auth.uid() = user_id);
@@ -94,11 +91,7 @@ DROP POLICY IF EXISTS "Users can update their own agents" ON agents;
 CREATE POLICY "Users can update their own agents" ON agents
     FOR UPDATE USING (auth.uid() = user_id);
 
--- 9. Add unique constraint on batch_id if it doesn't exist
-ALTER TABLE agents ADD CONSTRAINT IF NOT EXISTS unique_batch_id UNIQUE (batch_id);
-
--- 10. Insert sample agent data for testing (replace with actual user_id)
--- Note: Replace 'ac5d2e48-c813-498a-a328-a9b32971364f' with the actual user_id from the logs
+-- 7. Insert sample data (only if no data exists for this user)
 INSERT INTO agents (
     batch_id,
     user_id,
@@ -120,7 +113,8 @@ INSERT INTO agents (
     prompt,
     search_lookback_hours,
     max_results
-) VALUES (
+) 
+SELECT 
     'batch_20250801_test_001',
     'ac5d2e48-c813-498a-a328-a9b32971364f',
     'christabb@gmail.com',
@@ -141,9 +135,26 @@ INSERT INTO agents (
     'software engineer',
     24,
     50
-) ON CONFLICT (batch_id) DO NOTHING;
+WHERE NOT EXISTS (
+    SELECT 1 FROM agents 
+    WHERE user_id = 'ac5d2e48-c813-498a-a328-a9b32971364f' 
+    AND batch_id = 'batch_20250801_test_001'
+);
 
--- 11. Verify the data was inserted
+-- 8. Verify results
+SELECT 'Final table structure:' as info;
+SELECT 
+    column_name, 
+    data_type, 
+    is_nullable 
+FROM information_schema.columns 
+WHERE table_name = 'agents' 
+ORDER BY ordinal_position;
+
+SELECT 'Final data count:' as info;
+SELECT COUNT(*) as total_agents FROM agents;
+
+SELECT 'Sample agent data:' as info;
 SELECT 
     batch_id,
     user_id,
@@ -156,14 +167,4 @@ SELECT
     processed_companies,
     total_jobs_found
 FROM agents 
-WHERE user_id = 'ac5d2e48-c813-498a-a328-a9b32971364f';
-
--- 12. Show final table structure
-SELECT 
-    column_name, 
-    data_type, 
-    is_nullable, 
-    column_default 
-FROM information_schema.columns 
-WHERE table_name = 'agents' 
-ORDER BY ordinal_position; 
+WHERE user_id = 'ac5d2e48-c813-498a-a328-a9b32971364f'; 
