@@ -153,6 +153,26 @@ class InstantlyManager:
                         leads = data['data']
                     elif isinstance(data, dict) and 'leads' in data:
                         leads = data['leads']
+                    elif isinstance(data, dict) and 'lead_lists' in data:
+                        # Handle lead-lists endpoint response
+                        lead_lists = data['lead_lists']
+                        leads = []
+                        for lead_list in lead_lists:
+                            if isinstance(lead_list, dict) and 'leads' in lead_list:
+                                leads.extend(lead_list['leads'])
+                        logger.info(f"Extracted {len(leads)} leads from {len(lead_lists)} lead lists")
+                    elif isinstance(data, dict):
+                        # Try to extract leads from any dict structure
+                        logger.info(f"Attempting to extract leads from dict structure: {list(data.keys())}")
+                        # Look for common lead-related keys
+                        for key in ['leads', 'data', 'results', 'items']:
+                            if key in data and isinstance(data[key], list):
+                                leads = data[key]
+                                logger.info(f"Found leads in '{key}' field")
+                                break
+                        else:
+                            logger.warning(f"Unexpected response structure from {url}: {type(data)}")
+                            continue
                     else:
                         logger.warning(f"Unexpected response structure from {url}: {type(data)}")
                         continue
