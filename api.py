@@ -1465,6 +1465,7 @@ async def process_jobs_background(request: JobSearchRequest, current_user: Dict 
                 "query": request.query,
                 "status": "created",
                 "start_time": datetime.now().isoformat(),
+                "created_at": datetime.now().isoformat(),  # Ensure created_at is set
                 "total_cities": 55,
                 "processed_cities": 0,
                 "processed_companies": 0,
@@ -1597,8 +1598,8 @@ async def get_agents(current_user: Dict = Depends(get_current_user)):
             all_agents = supabase.table("agents").select("*").execute()
             logger.info(f"All agents in table: {all_agents.data}")
             
-            # Now filter by user_id
-            result = supabase.table("agents").select("*").eq("user_id", current_user["user_id"]).order("start_time", desc=True).limit(50).execute()
+            # Now filter by user_id - use created_at for ordering since start_time might be null
+            result = supabase.table("agents").select("*").eq("user_id", current_user["user_id"]).order("created_at", desc=True).limit(50).execute()
             logger.info(f"Query result for user {current_user['user_id']}: {result.data}")
             
             # Also check if there are any agents with the batch_id we just created
@@ -1624,7 +1625,7 @@ async def get_agents(current_user: Dict = Depends(get_current_user)):
                 "user_email": agent.get("user_email", "unknown"),
                 "query": agent["query"],
                 "status": agent["status"],
-                "start_time": agent["start_time"],
+                "start_time": agent.get("start_time") or agent.get("created_at", ""),
                 "end_time": agent.get("end_time"),
                 "total_cities": agent["total_cities"],
                 "processed_cities": agent["processed_cities"],
