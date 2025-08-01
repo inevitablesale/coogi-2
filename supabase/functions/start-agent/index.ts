@@ -46,12 +46,12 @@ serve(async (req) => {
     // Prepare request body for Railway API
     const requestBody = {
       query,
-      hours_old: hours_old || 24,
-      enforce_salary: enforce_salary || false,
-      auto_generate_messages: auto_generate_messages || false,
-      create_campaigns: create_campaigns || true,
+      hours_old: hours_old !== undefined ? hours_old : 24,  // Use actual value from UI
+      enforce_salary: enforce_salary !== undefined ? enforce_salary : false,
+      auto_generate_messages: auto_generate_messages !== undefined ? auto_generate_messages : false,
+      create_campaigns: create_campaigns !== undefined ? create_campaigns : true,
       campaign_name: campaign_name || `${query} Campaign`,
-      min_score: min_score || 0.7
+      min_score: min_score !== undefined ? min_score : 0.7
     }
     
     console.log('🔍 Edge Function: Sending request to Railway API:', JSON.stringify(requestBody))
