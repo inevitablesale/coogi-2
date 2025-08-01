@@ -202,6 +202,86 @@
             content: '←';
             margin-right: 8px;
         }
+
+        .campaigns-section {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .campaign-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            background: #fafafa;
+        }
+
+        .campaign-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .campaign-header h4 {
+            margin: 0;
+            color: #333;
+            font-size: 18px;
+        }
+
+        .campaign-meta {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .status.active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.paused {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status.unknown {
+            background: #f8f9fa;
+            color: #6c757d;
+        }
+
+        .leads-count {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .leads-list {
+            margin-top: 15px;
+        }
+
+        .leads-list h5 {
+            margin: 0 0 10px 0;
+            color: #555;
+            font-size: 14px;
+        }
+
+        .no-leads {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -399,25 +479,76 @@
                 
                 const container = document.getElementById('campaignsContainer');
                 if (agentCampaigns.length > 0) {
+                    // Fetch leads for each campaign
+                    const campaignsWithLeads = await Promise.all(
+                        agentCampaigns.map(async (campaign) => {
+                            try {
+                                const leadsResponse = await fetch(`${RAILWAY_API}/instantly-campaigns/${campaign.id}/leads`);
+                                if (leadsResponse.ok) {
+                                    const leadsData = await leadsResponse.json();
+                                    return {
+                                        ...campaign,
+                                        leads: leadsData.leads || []
+                                    };
+                                } else {
+                                    return {
+                                        ...campaign,
+                                        leads: []
+                                    };
+                                }
+                            } catch (error) {
+                                console.error(`Error fetching leads for campaign ${campaign.id}:`, error);
+                                return {
+                                    ...campaign,
+                                    leads: []
+                                };
+                            }
+                        })
+                    );
+                    
                     container.innerHTML = `
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Campaign Name</th>
-                                    <th>Status</th>
-                                    <th>Leads</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${agentCampaigns.map(campaign => `
-                                    <tr>
-                                        <td>${campaign.name || 'Unknown'}</td>
-                                        <td>${campaign.status || 'Unknown'}</td>
-                                        <td>${campaign.leads_count || 0}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
+                        <div class="campaigns-section">
+                            ${campaignsWithLeads.map(campaign => `
+                                <div class="campaign-card">
+                                    <div class="campaign-header">
+                                        <h4>${campaign.name || 'Unknown Campaign'}</h4>
+                                        <div class="campaign-meta">
+                                            <span class="status ${campaign.status || 'unknown'}">${campaign.status || 'Unknown'}</span>
+                                            <span class="leads-count">${campaign.leads_count || 0} leads</span>
+                                        </div>
+                                    </div>
+                                    ${campaign.leads && campaign.leads.length > 0 ? `
+                                        <div class="leads-list">
+                                            <h5>Contacts Added:</h5>
+                                            <table class="data-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Name</th>
+                                                        <th>Title</th>
+                                                        <th>Company</th>
+                                                        <th>Email</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    ${campaign.leads.map(lead => `
+                                                        <tr>
+                                                            <td>${lead.first_name || ''} ${lead.last_name || ''}</td>
+                                                            <td>${lead.title || ''}</td>
+                                                            <td>${lead.company || ''}</td>
+                                                            <td>${lead.email || ''}</td>
+                                                        </tr>
+                                                    `).join('')}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ` : `
+                                        <div class="no-leads">
+                                            <p>No contacts added to this campaign yet</p>
+                                        </div>
+                                    `}
+                                </div>
+                            `).join('')}
+                        </div>
                     `;
                 } else {
                     container.innerHTML = '<div class="loading">No campaigns found for this agent</div>';
