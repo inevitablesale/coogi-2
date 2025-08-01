@@ -1185,6 +1185,7 @@
                             <div class="agent-status">
                                 <div class="status-indicator status-${agent.status}"></div>
                                 <button onclick="event.stopPropagation(); cancelAgent('${batchId}')" class="btn btn-danger">🚫 Kill</button>
+                                <button onclick="event.stopPropagation(); deleteAgent('${batchId}')" class="btn btn-danger" style="margin-left: 5px;">🗑️ Delete</button>
                             </div>
                         </div>
                         
@@ -1238,6 +1239,47 @@
                 }
             } catch (error) {
                 console.error('Error cancelling agent:', error);
+            }
+        }
+
+        // Delete agent
+        async function deleteAgent(batchId) {
+            if (!confirm('Are you sure you want to delete this agent? This action cannot be undone.')) {
+                return;
+            }
+            
+            try {
+                const authToken = await getAuthToken();
+                if (!authToken) {
+                    console.error('No auth token available');
+                    return;
+                }
+                
+                const response = await fetch(`${RAILWAY_API}/agents/${batchId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    // Remove from active agents
+                    activeAgents.delete(batchId);
+                    stopAgentMonitoring(batchId);
+                    
+                    // Update display
+                    updateAgentsDisplay();
+                    loadDashboardStats();
+                    
+                    console.log(`✅ Agent ${batchId} deleted successfully`);
+                } else {
+                    const errorText = await response.text();
+                    console.error('Error deleting agent:', errorText);
+                    alert(`Error deleting agent: ${errorText}`);
+                }
+            } catch (error) {
+                console.error('Error deleting agent:', error);
+                alert(`Error deleting agent: ${error.message}`);
             }
         }
 

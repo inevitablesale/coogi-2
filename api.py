@@ -1599,6 +1599,55 @@ async def cancel_search(batch_id: str):
         logger.error(f"Error cancelling search {batch_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/agents/{batch_id}")
+async def delete_agent(batch_id: str, current_user: Dict = Depends(get_current_user)):
+    """Delete an agent by batch_id"""
+    try:
+        if not supabase:
+            raise HTTPException(status_code=503, detail="Supabase not configured")
+        
+        # First check if agent exists and belongs to user
+        agent_response = supabase.table("agents").select("*").eq("batch_id", batch_id).eq("user_id", current_user["user_id"]).execute()
+        
+        if not agent_response.data:
+            raise HTTPException(status_code=404, detail="Agent not found or access denied")
+        
+        agent = agent_response.data[0]
+        logger.info(f"🗑️ Deleting agent {batch_id} for user {current_user['user_id']}")
+        
+        # Cancel if still running
+        if batch_id in active_searches:
+            active_searches[batch_id] = True
+            logger.info(f"🚫 Cancelled running agent {batch_id}")
+        
+        # Delete from database
+        delete_response = supabase.table("agents").delete().eq("batch_id", batch_id).eq("user_id", current_user["user_id"]).execute()
+        
+        if delete_response.data:
+            logger.info(f"✅ Successfully deleted agent {batch_id}")
+            
+            # Also clean up related data
+            try:
+                # Delete logs
+                supabase.table("search_logs_enhanced").delete().eq("batch_id", batch_id).execute()
+                logger.info(f"🧹 Cleaned up logs for agent {batch_id}")
+            except Exception as log_error:
+                logger.warning(f"Could not clean up logs: {log_error}")
+            
+            return {
+                "status": "deleted",
+                "batch_id": batch_id,
+                "message": "Agent deleted successfully"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete agent")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting agent {batch_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/search-status/{batch_id}")
 async def get_search_status(batch_id: str):
     """Get the status of a search by batch_id"""
