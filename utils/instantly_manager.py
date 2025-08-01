@@ -135,8 +135,10 @@ class InstantlyManager:
                 "Content-Type": "application/json"
             }
             
-            # Use POST with empty body to get all leads
-            payload = {}
+            # Use POST with empty body to get all leads (increase limit to get more)
+            payload = {
+                "limit": 100  # Get up to 100 leads instead of default 10
+            }
             
             response = requests.post(url, headers=headers, json=payload, timeout=30)
             
@@ -1265,6 +1267,41 @@ Contact: {{contact_title}}
         except Exception as e:
             logger.error(f"Error getting warmup analytics: {e}")
             return {}
+
+    def get_all_accounts(self) -> List[Dict[str, Any]]:
+        """Get all email accounts using GET /api/v2/accounts"""
+        try:
+            url = f"{self.base_url}/api/v2/accounts"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            params = {
+                "limit": 100  # Get up to 100 accounts
+            }
+            
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Extract accounts from the 'items' field as per API documentation
+                if isinstance(data, dict) and 'items' in data:
+                    accounts = data['items']
+                    logger.info(f"✅ Successfully retrieved {len(accounts)} accounts from /api/v2/accounts")
+                else:
+                    logger.error(f"Unexpected response structure: {type(data)}")
+                    return []
+                
+                return accounts
+            else:
+                logger.error(f"Failed to get accounts: {response.status_code} - {response.text}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error getting accounts: {e}")
+            return []
 
     def test_account_vitals(self, accounts: List[str]) -> Dict[str, Any]:
         """Test account vitals using POST /api/v2/accounts/test/vitals"""

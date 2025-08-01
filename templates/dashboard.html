@@ -797,8 +797,8 @@
                 loadActiveAgents()  // Load existing agents from Supabase
             ]);
             
-            // Start monitoring
-            setInterval(updateDashboard, 5000);
+            // Start monitoring (reduced frequency to prevent excessive calls)
+            setInterval(updateDashboard, 15000); // Check every 15 seconds instead of 5
         }
 
         // Load agent templates
@@ -1133,7 +1133,7 @@
 
         // Start monitoring for specific agent
         function startAgentMonitoring(batchId) {
-            const interval = setInterval(() => checkAgentStatus(batchId), 5000);
+            const interval = setInterval(() => checkAgentStatus(batchId), 10000); // Check every 10 seconds instead of 5
             statusIntervals.set(batchId, interval);
         }
 
