@@ -433,8 +433,48 @@ async def debug_environment():
         "INSTANTLY_API_KEY": "SET" if os.getenv("INSTANTLY_API_KEY") else "NOT SET",
         "RAPIDAPI_KEY": "SET" if os.getenv("RAPIDAPI_KEY") else "NOT SET",
         "CLEAROUT_API_KEY": "SET" if os.getenv("CLEAROUT_API_KEY") else "NOT SET",
+        "SUPABASE_URL": os.getenv("SUPABASE_URL"),
+        "SUPABASE_ANON_KEY": "SET" if os.getenv("SUPABASE_ANON_KEY") else "NOT SET",
+        "SUPABASE_SERVICE_ROLE_KEY": "SET" if os.getenv("SUPABASE_SERVICE_ROLE_KEY") else "NOT SET",
         "all_env_vars": dict(os.environ)
     }
+
+@app.get("/debug/agents-table")
+async def debug_agents_table():
+    """Debug agents table access"""
+    try:
+        if not supabase:
+            return {"error": "Supabase client not initialized"}
+        
+        # Test 1: Direct query without RLS
+        logger.info("🔍 Testing direct agents table query...")
+        direct_result = supabase.table("agents").select("*").execute()
+        logger.info(f"Direct query result: {len(direct_result.data)} agents")
+        
+        # Test 2: Query with service role (if available)
+        service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        if service_key:
+            logger.info("🔍 Testing with service role key...")
+            service_client = create_client(supabase_url, service_key)
+            service_result = service_client.table("agents").select("*").execute()
+            logger.info(f"Service role query result: {len(service_result.data)} agents")
+        else:
+            logger.warning("⚠️ No service role key found")
+            service_result = {"data": []}
+        
+        return {
+            "direct_query_count": len(direct_result.data),
+            "service_role_count": len(service_result.data),
+            "direct_query_sample": direct_result.data[:2] if direct_result.data else [],
+            "service_role_sample": service_result.data[:2] if service_result.data else [],
+            "supabase_url": supabase_url,
+            "has_service_key": bool(service_key),
+            "has_anon_key": bool(supabase_key)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error debugging agents table: {e}")
+        return {"error": str(e)}
 
 @app.get("/", response_model=HealthResponse)
 async def health_check():
