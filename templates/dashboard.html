@@ -631,6 +631,21 @@
             color: #c53030;
         }
 
+        .verification-status.verified { 
+            color: #28a745; 
+            font-weight: bold; 
+        }
+        .verification-status.unverified { 
+            color: #dc3545; 
+            font-weight: bold; 
+        }
+
+        .modal-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
         .linkedin-link {
             color: #0077b5;
             text-decoration: none;
@@ -871,7 +886,12 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="modalTitle">Campaign Leads</h2>
-                <span class="close" onclick="closeCampaignLeadsModal()">&times;</span>
+                <div class="modal-actions">
+                    <button class="btn btn-success" onclick="exportCampaignLeads(currentCampaignId)">
+                        📤 Export All Leads
+                    </button>
+                    <span class="close" onclick="closeCampaignLeadsModal()">&times;</span>
+                </div>
             </div>
             <div class="modal-body">
                 <div class="campaign-info" id="campaignInfo">
@@ -887,13 +907,14 @@
                                 <th>Email</th>
                                 <th>LinkedIn</th>
                                 <th>Score</th>
+                                <th>Email Verified</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="modalLeadsTableBody">
                             <tr>
-                                <td colspan="8">Loading leads...</td>
+                                <td colspan="10">Loading leads...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1627,9 +1648,13 @@
             `).join('');
         }
 
+        // Global variable to track current campaign ID
+        let currentCampaignId = null;
+
         // View campaign leads in modal
         async function viewCampaignLeads(campaignId, campaignName) {
             try {
+                currentCampaignId = campaignId; // Store for export function
                 // Show modal
                 const modal = document.getElementById('campaignLeadsModal');
                 const modalTitle = document.getElementById('modalTitle');
@@ -1638,7 +1663,7 @@
                 
                 modalTitle.textContent = `${campaignName} - Leads`;
                 campaignInfo.innerHTML = `<strong>Campaign ID:</strong> ${campaignId}`;
-                leadsTableBody.innerHTML = '<tr><td colspan="8">Loading leads...</td></tr>';
+                leadsTableBody.innerHTML = '<tr><td colspan="10">Loading leads...</td></tr>';
                 modal.style.display = 'block';
                 
                 // Fetch leads for this campaign
@@ -1647,11 +1672,11 @@
                     const data = await response.json();
                     renderModalLeads(data.leads);
                 } else {
-                    leadsTableBody.innerHTML = '<tr><td colspan="8">Error loading leads</td></tr>';
+                    leadsTableBody.innerHTML = '<tr><td colspan="10">Error loading leads</td></tr>';
                 }
             } catch (error) {
                 console.error('Error loading campaign leads:', error);
-                document.getElementById('modalLeadsTableBody').innerHTML = '<tr><td colspan="8">Error loading leads</td></tr>';
+                document.getElementById('modalLeadsTableBody').innerHTML = '<tr><td colspan="10">Error loading leads</td></tr>';
             }
         }
 
@@ -1660,7 +1685,7 @@
             const leadsTableBody = document.getElementById('modalLeadsTableBody');
             
             if (!leads || leads.length === 0) {
-                leadsTableBody.innerHTML = '<tr><td colspan="8">No leads found for this campaign</td></tr>';
+                leadsTableBody.innerHTML = '<tr><td colspan="10">No leads found for this campaign</td></tr>';
                 return;
             }
             
@@ -1679,6 +1704,11 @@
                     <td>
                         <span class="lead-score score-${getScoreClass(lead.score)}">
                             ${Math.round(lead.score * 100)}%
+                        </span>
+                    </td>
+                    <td>
+                        <span class="verification-status ${lead.email_verified ? 'verified' : 'unverified'}">
+                            ${lead.email_verified ? '✅ Verified' : '❌ Unverified'}
                         </span>
                     </td>
                     <td>${lead.status || 'N/A'}</td>
@@ -1863,6 +1893,44 @@
                 }
             } catch (error) {
                 console.error('Error exporting lead:', error);
+            }
+        }
+
+        // Export all leads from campaign
+        async function exportCampaignLeads(campaignId) {
+            try {
+                showToast('Info', 'Exporting campaign leads...', 'info');
+                
+                const response = await fetch(`${RAILWAY_API}/instantly-campaigns/${campaignId}/export`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ format: 'csv' })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Create and download CSV file
+                    const blob = new Blob([data.content], { type: 'text/csv' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = data.filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    showToast('Success', `Exported ${data.message}`, 'success');
+                } else {
+                    const errorText = await response.text();
+                    showToast('Error', `Failed to export campaign: ${errorText}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error exporting campaign leads:', error);
+                showToast('Error', 'Failed to export campaign leads', 'error');
             }
         }
 

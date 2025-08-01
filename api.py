@@ -2474,6 +2474,113 @@ async def export_instantly_lead(lead_id: str):
         logger.error(f"Error exporting Instantly lead {lead_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/instantly-campaigns/{campaign_id}/export")
+async def export_campaign_leads(campaign_id: str, format: str = "csv"):
+    """Export all leads from a campaign"""
+    try:
+        leads = instantly_manager.get_leads_for_campaign(campaign_id)
+        if not leads:
+            raise HTTPException(status_code=404, detail="No leads found for this campaign")
+        
+        if format.lower() == "csv":
+            # Generate CSV content
+            import csv
+            import io
+            
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                "Name", "Email", "Company", "Title", "LinkedIn URL", 
+                "Score", "Status", "Email Verified", "Verification Score"
+            ])
+            
+            # Write data
+            for lead in leads:
+                writer.writerow([
+                    lead.get("name", ""),
+                    lead.get("email", ""),
+                    lead.get("company", ""),
+                    lead.get("title", ""),
+                    lead.get("linkedin_url", ""),
+                    lead.get("score", ""),
+                    lead.get("status", ""),
+                    lead.get("email_verified", False),
+                    lead.get("verification_score", 0)
+                ])
+            
+            csv_content = output.getvalue()
+            output.close()
+            
+            return {
+                "message": f"Successfully exported {len(leads)} leads",
+                "campaign_id": campaign_id,
+                "format": "csv",
+                "content": csv_content,
+                "filename": f"campaign_{campaign_id}_leads.csv"
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported format. Use 'csv'")
+            
+    except Exception as e:
+        logger.error(f"Error exporting campaign leads: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/instantly-analytics/real-time")
+async def get_real_time_analytics():
+    """Get real-time campaign analytics"""
+    try:
+        # Get all campaigns
+        campaigns = instantly_manager.get_all_campaigns()
+        
+        real_time_data = {
+            "total_campaigns": len(campaigns),
+            "active_campaigns": 0,
+            "total_leads": 0,
+            "total_sent": 0,
+            "total_opened": 0,
+            "total_replied": 0,
+            "total_clicked": 0,
+            "campaigns": []
+        }
+        
+        for campaign in campaigns:
+            campaign_id = campaign.get("id")
+            if campaign_id:
+                # Get campaign analytics
+                analytics = instantly_manager.get_campaign_analytics(campaign_id)
+                if analytics:
+                    campaign_data = {
+                        "id": campaign_id,
+                        "name": campaign.get("name", ""),
+                        "status": campaign.get("status", ""),
+                        "leads_count": analytics.get("leads_count", 0),
+                        "sent_count": analytics.get("sent_count", 0),
+                        "opened_count": analytics.get("opened_count", 0),
+                        "replied_count": analytics.get("replied_count", 0),
+                        "clicked_count": analytics.get("clicked_count", 0),
+                        "open_rate": analytics.get("open_rate", 0),
+                        "reply_rate": analytics.get("reply_rate", 0),
+                        "click_rate": analytics.get("click_rate", 0)
+                    }
+                    
+                    real_time_data["campaigns"].append(campaign_data)
+                    real_time_data["total_leads"] += campaign_data["leads_count"]
+                    real_time_data["total_sent"] += campaign_data["sent_count"]
+                    real_time_data["total_opened"] += campaign_data["opened_count"]
+                    real_time_data["total_replied"] += campaign_data["replied_count"]
+                    real_time_data["total_clicked"] += campaign_data["clicked_count"]
+                    
+                    if campaign_data["status"] == "active":
+                        real_time_data["active_campaigns"] += 1
+        
+        return real_time_data
+        
+    except Exception as e:
+        logger.error(f"Error getting real-time analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/instantly-stats")
 async def get_instantly_stats():
     """Get Instantly.ai statistics"""

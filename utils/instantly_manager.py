@@ -130,26 +130,36 @@ class InstantlyManager:
     def get_leads_for_campaign(self, campaign_id: str) -> List[Dict[str, Any]]:
         """Get leads for a specific campaign"""
         try:
-            url = f"{self.base_url}/api/v2/leads/list"
+            # First, get the campaign details to find the lead list
+            campaign = self.get_campaign(campaign_id)
+            if not campaign:
+                logger.error(f"Campaign {campaign_id} not found")
+                return []
+            
+            # Get the lead list ID from the campaign
+            lead_list_id = campaign.get('lead_list_id')
+            if not lead_list_id:
+                logger.error(f"No lead list found for campaign {campaign_id}")
+                return []
+            
+            # Get leads from the lead list
+            url = f"{self.base_url}/api/v2/lead-lists/{lead_list_id}/leads"
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
             
-            # Filter leads by campaign ID
-            payload = {
-                "limit": 1000,  # Get up to 1000 leads
-                "campaign_id": campaign_id
-            }
-            
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response = requests.get(url, headers=headers, timeout=30)
             
             if response.status_code == 200:
                 data = response.json()
                 
-                # Extract leads from the 'items' field as per API documentation
+                # Extract leads from the response
                 if isinstance(data, dict) and 'items' in data:
                     leads = data['items']
+                    logger.info(f"✅ Successfully retrieved {len(leads)} leads for campaign {campaign_id}")
+                elif isinstance(data, list):
+                    leads = data
                     logger.info(f"✅ Successfully retrieved {len(leads)} leads for campaign {campaign_id}")
                 else:
                     logger.error(f"Unexpected response structure: {type(data)}")
@@ -165,20 +175,23 @@ class InstantlyManager:
                     if isinstance(lead, dict):
                         # Map API fields to dashboard fields
                         lead['name'] = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
-                        lead['company'] = lead.get('company_name', 'N/A')
-                        lead['title'] = lead.get('job_title', 'N/A')
+                        lead['company'] = lead.get('company_name', lead.get('company', 'N/A'))
+                        lead['title'] = lead.get('job_title', lead.get('title', 'N/A'))
                         lead['email'] = lead.get('email', 'N/A')
-                        lead['score'] = lead.get('pl_value_lead', 'Medium')  # Use lead value as score
+                        lead['score'] = lead.get('pl_value_lead', lead.get('score', 'Medium'))
                         lead['status'] = self._get_status_text(lead.get('status', 1))
-                        lead['campaign_name'] = lead.get('campaign', 'N/A')
-                        lead['website'] = lead.get('website', 'N/A')
+                        lead['campaign_name'] = campaign.get('name', 'N/A')
                         
-                        # Extract LinkedIn URL from custom variables (payload field)
-                        payload = lead.get('payload', {})
-                        if isinstance(payload, dict):
-                            lead['linkedin_url'] = payload.get('linkedin_url', '')
+                        # Extract LinkedIn URL from custom fields
+                        custom_fields = lead.get('custom_fields', {})
+                        if isinstance(custom_fields, dict):
+                            lead['linkedin_url'] = custom_fields.get('linkedin_url', '')
                         else:
                             lead['linkedin_url'] = ''
+                        
+                        # Add email verification status
+                        lead['email_verified'] = lead.get('email_verified', False)
+                        lead['duplicate_check'] = lead.get('duplicate_check', False)
                 
                 return leads
             else:
@@ -188,6 +201,27 @@ class InstantlyManager:
         except Exception as e:
             logger.error(f"Error getting leads for campaign {campaign_id}: {e}")
             return []
+
+    def _remove_duplicate_leads(self, leads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove duplicate leads based on email address"""
+        seen_emails = set()
+        unique_leads = []
+        
+        for lead in leads:
+            email = lead.get("email", "").lower().strip()
+            if email and email not in seen_emails:
+                seen_emails.add(email)
+                unique_leads.append(lead)
+            elif not email:
+                # If no email, check by name + company combination
+                name = lead.get("name", "").lower().strip()
+                company = lead.get("company", "").lower().strip()
+                key = f"{name}_{company}"
+                if key not in seen_emails:
+                    seen_emails.add(key)
+                    unique_leads.append(lead)
+        
+        return unique_leads
 
     def get_all_leads(self) -> List[Dict[str, Any]]:
         """Get all leads for dashboard display using the correct POST /api/v2/leads/list endpoint"""
@@ -607,22 +641,42 @@ class InstantlyManager:
     
     def add_leads_to_campaign(self, campaign_id: str, leads: List[Dict[str, Any]]) -> bool:
         """
-        Add leads to a campaign (without sending)
+        Add leads to a campaign (without sending) with email verification and duplicate detection
         """
         if not self.api_key or not campaign_id:
             logger.warning("Missing Instantly API key or campaign ID")
             return False
             
         try:
-            url = f"{self.base_url}/api/v2/campaigns/{campaign_id}/leads"
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
-            
-            # Format leads for Instantly
-            formatted_leads = []
+            # Step 1: Verify emails before adding
+            verified_leads = []
             for lead in leads:
+                email = lead.get("email", "")
+                if email:
+                    # Verify email using Instantly's verification endpoint
+                    verification_result = self.verify_email(email)
+                    if verification_result.get('valid', False):
+                        lead['email_verified'] = True
+                        lead['verification_score'] = verification_result.get('score', 0)
+                        verified_leads.append(lead)
+                        logger.info(f"✅ Email verified: {email} (score: {verification_result.get('score', 0)})")
+                    else:
+                        logger.warning(f"⚠️ Email verification failed: {email} - {verification_result.get('reason', 'Unknown')}")
+                        # Still add the lead but mark as unverified
+                        lead['email_verified'] = False
+                        lead['verification_score'] = 0
+                        verified_leads.append(lead)
+                else:
+                    logger.warning(f"⚠️ No email provided for lead: {lead.get('name', 'Unknown')}")
+                    verified_leads.append(lead)
+            
+            # Step 2: Check for duplicates
+            unique_leads = self._remove_duplicate_leads(verified_leads)
+            logger.info(f"📊 Duplicate check: {len(verified_leads)} total leads, {len(unique_leads)} unique leads")
+            
+            # Step 3: Format leads for Instantly
+            formatted_leads = []
+            for lead in unique_leads:
                 formatted_lead = {
                     "email": lead.get("email", ""),
                     "first_name": lead.get("name", "").split()[0] if lead.get("name") else "",
@@ -637,14 +691,25 @@ class InstantlyManager:
                         "hunter_emails": ", ".join(lead.get("hunter_emails", [])),
                         "company_website": lead.get("company_website", ""),
                         "target_job_title": lead.get("job_title", ""),  # Job they're hiring for
-                        "contact_title": lead.get("title", "")  # For template personalization
+                        "contact_title": lead.get("title", ""),  # For template personalization
+                        "linkedin_url": lead.get("linkedin_url", ""),
+                        "email_verified": str(lead.get("email_verified", False)),
+                        "verification_score": str(lead.get("verification_score", 0))
                     }
                 }
                 formatted_leads.append(formatted_lead)
             
+            # Step 4: Add leads to campaign
+            url = f"{self.base_url}/api/v2/campaigns/{campaign_id}/leads"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
             payload = {
                 "leads": formatted_leads,
-                "status": "draft"  # Keep as draft - don't send yet
+                "status": "draft",  # Keep as draft - don't send yet
+                "check_duplicates": True  # Enable duplicate checking on Instantly side
             }
             
             response = requests.post(url, headers=headers, json=payload, timeout=30)
