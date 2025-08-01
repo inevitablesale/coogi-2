@@ -580,6 +580,18 @@
             color: #c53030;
         }
 
+        .linkedin-link {
+            color: #0077b5;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s ease;
+        }
+
+        .linkedin-link:hover {
+            color: #005885;
+            text-decoration: underline;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .dashboard-grid {
@@ -740,6 +752,7 @@
                         <th>Company</th>
                         <th>Title</th>
                         <th>Email</th>
+                        <th>LinkedIn</th>
                         <th>Score</th>
                         <th>Campaign</th>
                         <th>Status</th>
@@ -748,7 +761,7 @@
                 </thead>
                 <tbody id="leadsTableBody">
                     <tr>
-                        <td colspan="8">Loading leads...</td>
+                        <td colspan="9">Loading leads...</td>
                     </tr>
                 </tbody>
             </table>
@@ -1355,6 +1368,12 @@
                     <td>${lead.title || 'N/A'}</td>
                     <td>${lead.email || 'N/A'}</td>
                     <td>
+                        ${lead.linkedin_url ? 
+                            `<a href="${lead.linkedin_url}" target="_blank" class="linkedin-link">🔗 LinkedIn</a>` : 
+                            'N/A'
+                        }
+                    </td>
+                    <td>
                         <span class="lead-score score-${getScoreClass(lead.score)}">
                             ${Math.round(lead.score * 100)}%
                         </span>
@@ -1487,7 +1506,35 @@
                 const response = await fetch(`${RAILWAY_API}/instantly-leads/${leadId}`);
                 if (response.ok) {
                     const lead = await response.json();
-                    alert(`Lead: ${lead.name}\nCompany: ${lead.company}\nEmail: ${lead.email}\nScore: ${Math.round(lead.score * 100)}%`);
+                    
+                    // Build detailed lead information
+                    let leadInfo = `Lead Details:\n\n`;
+                    leadInfo += `Name: ${lead.name || 'N/A'}\n`;
+                    leadInfo += `Company: ${lead.company || 'N/A'}\n`;
+                    leadInfo += `Email: ${lead.email || 'N/A'}\n`;
+                    leadInfo += `Title: ${lead.title || 'N/A'}\n`;
+                    leadInfo += `Score: ${Math.round(lead.score * 100)}%\n`;
+                    leadInfo += `Status: ${lead.status || 'N/A'}\n`;
+                    leadInfo += `Campaign: ${lead.campaign_name || 'N/A'}\n`;
+                    leadInfo += `Website: ${lead.website || 'N/A'}\n`;
+                    
+                    // Add LinkedIn URL if available
+                    if (lead.linkedin_url) {
+                        leadInfo += `LinkedIn: ${lead.linkedin_url}\n`;
+                    }
+                    
+                    // Add custom variables if available
+                    const payload = lead.payload;
+                    if (payload && typeof payload === 'object') {
+                        leadInfo += `\nCustom Fields:\n`;
+                        for (const [key, value] of Object.entries(payload)) {
+                            if (key !== 'linkedin_url') { // Already shown above
+                                leadInfo += `${key}: ${value}\n`;
+                            }
+                        }
+                    }
+                    
+                    alert(leadInfo);
                 }
             } catch (error) {
                 console.error('Error viewing lead:', error);

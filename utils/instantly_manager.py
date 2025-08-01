@@ -171,6 +171,13 @@ class InstantlyManager:
                         lead['status'] = self._get_status_text(lead.get('status', 1))
                         lead['campaign_name'] = lead.get('campaign', 'N/A')
                         lead['website'] = lead.get('website', 'N/A')
+                        
+                        # Extract LinkedIn URL from custom variables (payload field)
+                        payload = lead.get('payload', {})
+                        if isinstance(payload, dict):
+                            lead['linkedin_url'] = payload.get('linkedin_url', '')
+                        else:
+                            lead['linkedin_url'] = ''
                 
                 return leads
             else:
@@ -1177,8 +1184,29 @@ Contact: {{contact_title}}
             if response.status_code != 200:
                 logger.error(f"Failed to get lead {lead_id}: {response.status_code}")
                 return None
+            
+            lead = response.json()
+            
+            # Enhance with additional data for dashboard display
+            if isinstance(lead, dict):
+                # Map API fields to dashboard fields
+                lead['name'] = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
+                lead['company'] = lead.get('company_name', 'N/A')
+                lead['title'] = lead.get('job_title', 'N/A')
+                lead['email'] = lead.get('email', 'N/A')
+                lead['score'] = lead.get('pl_value_lead', 'Medium')
+                lead['status'] = self._get_status_text(lead.get('status', 1))
+                lead['campaign_name'] = lead.get('campaign', 'N/A')
+                lead['website'] = lead.get('website', 'N/A')
                 
-            return response.json()
+                # Extract LinkedIn URL from custom variables (payload field)
+                payload = lead.get('payload', {})
+                if isinstance(payload, dict):
+                    lead['linkedin_url'] = payload.get('linkedin_url', '')
+                else:
+                    lead['linkedin_url'] = ''
+                
+            return lead
             
         except Exception as e:
             logger.error(f"Error getting lead {lead_id}: {e}")
