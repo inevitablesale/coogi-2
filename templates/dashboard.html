@@ -1522,7 +1522,7 @@
 
         // View agent detail page
         function viewAgentDetail(batchId) {
-            window.open(`/agent-detail?batch_id=${batchId}`, '_blank');
+            window.location.href = `/agent-detail?batch_id=${batchId}`;
         }
 
         // Poll for agent creation completion
