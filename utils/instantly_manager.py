@@ -1006,7 +1006,7 @@ Contact: {{contact_title}}
             return []
 
     def get_campaign_analytics(self, campaign_id: str) -> Optional[Dict[str, Any]]:
-        """Get detailed analytics for a specific campaign"""
+        """Get detailed analytics for a specific campaign using the correct GET /api/v2/campaigns/analytics endpoint"""
         try:
             url = f"{self.base_url}/api/v2/campaigns/analytics"
             headers = {
@@ -1021,16 +1021,19 @@ Contact: {{contact_title}}
             
             response = requests.get(url, headers=headers, params=params, timeout=30)
             
-            if response.status_code != 200:
-                logger.error(f"Failed to get campaign analytics {campaign_id}: {response.status_code}")
+            if response.status_code == 200:
+                analytics = response.json()
+                # The API returns an array of campaign analytics
+                if analytics and len(analytics) > 0:
+                    logger.info(f"✅ Successfully retrieved analytics for campaign {campaign_id}")
+                    return analytics[0]  # Return first (and only) campaign analytics
+                else:
+                    logger.warning(f"No analytics found for campaign {campaign_id}")
+                    return None
+            else:
+                logger.error(f"Failed to get campaign analytics {campaign_id}: {response.status_code} - {response.text}")
                 return None
                 
-            analytics = response.json()
-            if analytics and len(analytics) > 0:
-                return analytics[0]  # Return first (and only) campaign analytics
-                
-            return None
-            
         except Exception as e:
             logger.error(f"Error getting campaign analytics {campaign_id}: {e}")
             return None
@@ -1234,4 +1237,58 @@ Contact: {{contact_title}}
                 "total_replied": 0,
                 "total_clicked": 0,
                 "overview": {}
-            } 
+            }
+
+    def get_warmup_analytics(self, emails: List[str]) -> Dict[str, Any]:
+        """Get warmup analytics for specific email accounts using POST /api/v2/accounts/warmup-analytics"""
+        try:
+            url = f"{self.base_url}/api/v2/accounts/warmup-analytics"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "emails": emails
+            }
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"✅ Successfully retrieved warmup analytics for {len(emails)} emails")
+                return data
+            else:
+                logger.error(f"Failed to get warmup analytics: {response.status_code} - {response.text}")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Error getting warmup analytics: {e}")
+            return {}
+
+    def test_account_vitals(self, accounts: List[str]) -> Dict[str, Any]:
+        """Test account vitals using POST /api/v2/accounts/test/vitals"""
+        try:
+            url = f"{self.base_url}/api/v2/accounts/test/vitals"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "accounts": accounts
+            }
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"✅ Successfully tested vitals for {len(accounts)} accounts")
+                return data
+            else:
+                logger.error(f"Failed to test account vitals: {response.status_code} - {response.text}")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Error testing account vitals: {e}")
+            return {}
