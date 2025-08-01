@@ -12,6 +12,108 @@
             box-sizing: border-box;
         }
 
+        /* Toast Notification System */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            padding: 16px 20px;
+            margin-bottom: 10px;
+            min-width: 300px;
+            max-width: 400px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+            pointer-events: auto;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .toast.success {
+            border-left: 4px solid #10b981;
+        }
+
+        .toast.error {
+            border-left: 4px solid #ef4444;
+        }
+
+        .toast.info {
+            border-left: 4px solid #3b82f6;
+        }
+
+        .toast.warning {
+            border-left: 4px solid #f59e0b;
+        }
+
+        .toast-icon {
+            flex-shrink: 0;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toast.success .toast-icon {
+            color: #10b981;
+        }
+
+        .toast.error .toast-icon {
+            color: #ef4444;
+        }
+
+        .toast.info .toast-icon {
+            color: #3b82f6;
+        }
+
+        .toast.warning .toast-icon {
+            color: #f59e0b;
+        }
+
+        .toast-content {
+            flex: 1;
+        }
+
+        .toast-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #1f2937;
+        }
+
+        .toast-message {
+            color: #6b7280;
+            font-size: 0.875rem;
+            line-height: 1.4;
+        }
+
+        .toast-close {
+            background: none;
+            border: none;
+            color: #9ca3af;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: color 0.2s;
+        }
+
+        .toast-close:hover {
+            color: #6b7280;
+        }
+
         body {
             font-family: 'Inter', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -699,8 +801,11 @@
         }
     </style>
 </head>
-<body>
-    <div class="container">
+    <body>
+        <!-- Toast Notification Container -->
+        <div class="toast-container" id="toastContainer"></div>
+        
+        <div class="container">
         <!-- Header with Stats -->
         <div class="header">
             <div class="header-top">
@@ -1058,6 +1163,40 @@
             `).join('');
         }
 
+        // Toast Notification System
+        function showToast(title, message, type = 'info', duration = 5000) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            const icons = {
+                success: '✅',
+                error: '❌',
+                warning: '⚠️',
+                info: 'ℹ️'
+            };
+            
+            toast.innerHTML = `
+                <div class="toast-icon">${icons[type]}</div>
+                <div class="toast-content">
+                    <div class="toast-title">${title}</div>
+                    <div class="toast-message">${message}</div>
+                </div>
+                <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Trigger animation
+            setTimeout(() => toast.classList.add('show'), 100);
+            
+            // Auto remove after duration
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+
         // Start new agent
         async function startAgent(formData) {
             try {
@@ -1135,7 +1274,11 @@
                     loadDashboardStats();
                     
                     // Show success message
-                    alert(`✅ Agent started successfully!\n\nQuery: ${query}\nBatch ID: ${batchId}\nJobs Found: ${result.jobs_found || 0}`);
+                    showToast(
+                        'Agent Started Successfully!',
+                        `Query: ${query}<br>Batch ID: ${batchId}<br>Jobs Found: ${result.jobs_found || 0}`,
+                        'success'
+                    );
                     
                     // Clear form
                     document.getElementById('agentForm').reset();
@@ -1145,7 +1288,7 @@
                 
             } catch (error) {
                 console.error('Error starting agent:', error);
-                alert(`Error starting agent: ${error.message}`);
+                showToast('Error Starting Agent', error.message, 'error');
             }
         }
 
@@ -1275,11 +1418,11 @@
                 } else {
                     const errorText = await response.text();
                     console.error('Error deleting agent:', errorText);
-                    alert(`Error deleting agent: ${errorText}`);
+                    showToast('Error Deleting Agent', errorText, 'error');
                 }
             } catch (error) {
                 console.error('Error deleting agent:', error);
-                alert(`Error deleting agent: ${error.message}`);
+                showToast('Error Deleting Agent', error.message, 'error');
             }
         }
 
@@ -1723,7 +1866,11 @@
                 const response = await fetch(`${RAILWAY_API}/instantly-campaigns/${campaignId}`);
                 if (response.ok) {
                     const campaign = await response.json();
-                    alert(`Campaign: ${campaign.name}\nLeads: ${campaign.leads_count}\nStatus: ${campaign.status}`);
+                    showToast(
+                    'Campaign Details',
+                    `Campaign: ${campaign.name}<br>Leads: ${campaign.leads_count}<br>Status: ${campaign.status}`,
+                    'info'
+                );
                 }
             } catch (error) {
                 console.error('Error viewing campaign:', error);
@@ -1737,7 +1884,7 @@
                 });
                 if (response.ok) {
                     loadCampaigns();
-                    alert('Campaign activated successfully!');
+                    showToast('Campaign Activated', 'Campaign activated successfully!', 'success');
                 }
             } catch (error) {
                 console.error('Error activating campaign:', error);
@@ -1751,7 +1898,7 @@
                 });
                 if (response.ok) {
                     loadCampaigns();
-                    alert('Campaign paused successfully!');
+                    showToast('Campaign Paused', 'Campaign paused successfully!', 'warning');
                 }
             } catch (error) {
                 console.error('Error pausing campaign:', error);
@@ -1792,7 +1939,7 @@
                         }
                     }
                     
-                    alert(leadInfo);
+                    showToast('Lead Details', leadInfo, 'info');
                 }
             } catch (error) {
                 console.error('Error viewing lead:', error);
@@ -1805,7 +1952,7 @@
                     method: 'POST'
                 });
                 if (response.ok) {
-                    alert('Lead exported successfully!');
+                    showToast('Lead Exported', 'Lead exported successfully!', 'success');
                 }
             } catch (error) {
                 console.error('Error exporting lead:', error);
