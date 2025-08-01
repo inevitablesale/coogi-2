@@ -179,10 +179,27 @@
 
         // Check if user is already logged in
         async function checkAuth() {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                // User is already logged in, redirect to dashboard
-                window.location.href = '/dashboard';
+            try {
+                // First check for session
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session && session.user) {
+                    console.log('✅ User already logged in via session:', session.user.email);
+                    window.location.href = '/dashboard';
+                    return;
+                }
+                
+                // If no session, check for user
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    console.log('✅ User already logged in via getUser:', user.email);
+                    window.location.href = '/dashboard';
+                    return;
+                }
+                
+                console.log('ℹ️ No authenticated user found, staying on login page');
+            } catch (error) {
+                console.error('❌ Authentication check error:', error);
+                // On error, stay on login page
             }
         }
 
@@ -240,7 +257,10 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
-            checkAuth();
+            // Add a small delay to ensure session is established
+            setTimeout(() => {
+                checkAuth();
+            }, 500);
             document.getElementById('loginForm').addEventListener('submit', handleLogin);
         });
     </script>
