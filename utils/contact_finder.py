@@ -185,7 +185,7 @@ class ContactFinder:
             if linkedin_url:
                 logger.info(f"🔗 Found LinkedIn URL: {linkedin_url}")
             
-            return contacts, has_ta_team, employee_roles, company_found, linkedin_url
+            return contacts, has_ta_team, employee_roles, company_found
             
         except Exception as e:
             logger.error(f"❌ Error finding contacts for {company}: {e}")
