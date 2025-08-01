@@ -127,82 +127,52 @@ class InstantlyManager:
             return False
 
     def get_all_leads(self) -> List[Dict[str, Any]]:
-        """Get all leads for dashboard display using the correct API endpoint"""
+        """Get all leads for dashboard display using the correct POST /api/v2/leads/list endpoint"""
         try:
-            # Try different endpoints for leads since /api/v2/leads doesn't exist
-            endpoints = [
-                f"{self.base_url}/api/v2/lead-lists",  # Try lead lists first
-                f"{self.base_url}/api/v2/contacts",     # Fallback to contacts
-            ]
+            url = f"{self.base_url}/api/v2/leads/list"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
             
-            for url in endpoints:
-                headers = {
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                }
+            # Use POST with empty body to get all leads
+            payload = {}
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
                 
-                response = requests.get(url, headers=headers, timeout=30)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    # Handle different response structures
-                    if isinstance(data, list):
-                        leads = data
-                    elif isinstance(data, dict) and 'data' in data:
-                        leads = data['data']
-                    elif isinstance(data, dict) and 'leads' in data:
-                        leads = data['leads']
-                    elif isinstance(data, dict) and 'lead_lists' in data:
-                        # Handle lead-lists endpoint response
-                        lead_lists = data['lead_lists']
-                        leads = []
-                        for lead_list in lead_lists:
-                            if isinstance(lead_list, dict) and 'leads' in lead_list:
-                                leads.extend(lead_list['leads'])
-                        logger.info(f"Extracted {len(leads)} leads from {len(lead_lists)} lead lists")
-                    elif isinstance(data, dict):
-                        # Try to extract leads from any dict structure
-                        logger.info(f"Attempting to extract leads from dict structure: {list(data.keys())}")
-                        # Look for common lead-related keys
-                        for key in ['leads', 'data', 'results', 'items']:
-                            if key in data and isinstance(data[key], list):
-                                leads = data[key]
-                                logger.info(f"Found leads in '{key}' field")
-                                break
-                        else:
-                            logger.warning(f"Unexpected response structure from {url}: {type(data)}")
-                            continue
-                    else:
-                        logger.warning(f"Unexpected response structure from {url}: {type(data)}")
-                        continue
-                    
-                    # Ensure leads is a list
-                    if not isinstance(leads, list):
-                        logger.error(f"Expected list of leads, got: {type(leads)}")
-                        continue
-                    
-                    # Enhance with additional data
-                    for lead in leads:
-                        if isinstance(lead, dict):
-                            # Map API fields to dashboard fields
-                            lead['name'] = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
-                            lead['company'] = lead.get('company_name', lead.get('company', 'N/A'))
-                            lead['title'] = lead.get('job_title', lead.get('title', 'N/A'))
-                            lead['email'] = lead.get('email', 'N/A')
-                            lead['score'] = lead.get('pl_value_lead', lead.get('score', 'Medium'))
-                            lead['status'] = self._get_status_text(lead.get('status', 1))
-                            lead['campaign_name'] = lead.get('campaign', lead.get('campaign_name', 'N/A'))
-                            lead['website'] = lead.get('website', 'N/A')
-                    
-                    logger.info(f"✅ Successfully retrieved {len(leads)} leads from {url}")
-                    return leads
+                # Extract leads from the 'items' field as per API documentation
+                if isinstance(data, dict) and 'items' in data:
+                    leads = data['items']
+                    logger.info(f"✅ Successfully retrieved {len(leads)} leads from /api/v2/leads/list")
                 else:
-                    logger.warning(f"Failed to get leads from {url}: {response.status_code}")
-            
-            # If all endpoints fail, return empty list
-            logger.error("All lead endpoints failed")
-            return []
+                    logger.error(f"Unexpected response structure: {type(data)}")
+                    return []
+                
+                # Ensure leads is a list
+                if not isinstance(leads, list):
+                    logger.error(f"Expected list of leads, got: {type(leads)}")
+                    return []
+                
+                # Enhance with additional data based on API schema
+                for lead in leads:
+                    if isinstance(lead, dict):
+                        # Map API fields to dashboard fields
+                        lead['name'] = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
+                        lead['company'] = lead.get('company_name', 'N/A')
+                        lead['title'] = lead.get('job_title', 'N/A')
+                        lead['email'] = lead.get('email', 'N/A')
+                        lead['score'] = lead.get('pl_value_lead', 'Medium')  # Use lead value as score
+                        lead['status'] = self._get_status_text(lead.get('status', 1))
+                        lead['campaign_name'] = lead.get('campaign', 'N/A')
+                        lead['website'] = lead.get('website', 'N/A')
+                
+                return leads
+            else:
+                logger.error(f"Failed to get leads: {response.status_code} - {response.text}")
+                return []
             
         except Exception as e:
             logger.error(f"Error getting leads: {e}")
