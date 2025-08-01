@@ -1573,12 +1573,21 @@ async def process_jobs_background(request: JobSearchRequest, current_user: Dict 
 async def cancel_search(batch_id: str):
     """Cancel an active search by batch_id"""
     try:
-        if batch_id not in active_searches:
-            raise HTTPException(status_code=404, detail="Search not found")
+        # First try to cancel in-memory search
+        if batch_id in active_searches:
+            active_searches[batch_id] = True
+            logger.info(f"🚫 Search {batch_id} marked for cancellation in memory")
         
-        # Mark search as cancelled
-        active_searches[batch_id] = True
-        logger.info(f"🚫 Search {batch_id} marked for cancellation")
+        # Also update the agent status in database
+        if supabase:
+            try:
+                supabase.table("agents").update({
+                    "status": "cancelled",
+                    "end_time": datetime.now().isoformat()
+                }).eq("batch_id", batch_id).execute()
+                logger.info(f"✅ Agent {batch_id} status updated to cancelled in database")
+            except Exception as db_error:
+                logger.warning(f"Could not update agent status in database: {db_error}")
         
         return {
             "status": "cancelled",
@@ -2055,7 +2064,33 @@ async def get_batch_results(batch_id: str):
         if not supabase:
             raise HTTPException(status_code=503, detail="Supabase not configured")
         
-        # Get batch summary
+        # First try to get agent from agents table
+        agent_response = supabase.table("agents").select("*").eq("batch_id", batch_id).execute()
+        
+        if agent_response.data:
+            agent = agent_response.data[0]
+            logger.info(f"✅ Found agent for batch {batch_id}: {agent}")
+            
+            # Get logs for this batch
+            try:
+                logs_response = supabase.table("search_logs_enhanced").select("*").eq("batch_id", batch_id).order("timestamp", desc=True).limit(100).execute()
+                logs = logs_response.data
+            except Exception:
+                logs = []
+            
+            return {
+                "agent": agent,
+                "logs": logs,
+                "total_logs": len(logs),
+                "batch_id": batch_id,
+                "status": agent.get("status", "unknown"),
+                "query": agent.get("query", ""),
+                "total_jobs_found": agent.get("total_jobs_found", 0),
+                "processed_companies": agent.get("processed_companies", 0),
+                "processed_cities": agent.get("processed_cities", 0)
+            }
+        
+        # Fallback to old batches table
         batch_response = supabase.table("batches").select("*").eq("batch_id", batch_id).execute()
         
         if not batch_response.data:
