@@ -1700,6 +1700,7 @@
         // View campaign leads in modal
         async function viewCampaignLeads(campaignId, campaignName) {
             try {
+                console.log(`🔍 Frontend: Loading leads for campaign ${campaignId} - ${campaignName}`);
                 currentCampaignId = campaignId; // Store for export function
                 // Show modal
                 const modal = document.getElementById('campaignLeadsModal');
@@ -1713,15 +1714,24 @@
                 modal.style.display = 'block';
                 
                 // Fetch leads for this campaign
-                const response = await fetch(`${RAILWAY_API}/instantly-campaigns/${campaignId}/leads`);
+                const url = `${RAILWAY_API}/instantly-campaigns/${campaignId}/leads`;
+                console.log(`🌐 Frontend: Making request to: ${url}`);
+                
+                const response = await fetch(url);
+                console.log(`📡 Frontend: Response status: ${response.status}`);
+                
                 if (response.ok) {
                     const data = await response.json();
+                    console.log(`📊 Frontend: Response data:`, data);
+                    console.log(`📋 Frontend: Leads count: ${data.leads ? data.leads.length : 0}`);
                     renderModalLeads(data.leads);
                 } else {
+                    const errorText = await response.text();
+                    console.error(`❌ Frontend: Error response: ${response.status} - ${errorText}`);
                     leadsTableBody.innerHTML = '<tr><td colspan="10">Error loading leads</td></tr>';
                 }
             } catch (error) {
-                console.error('Error loading campaign leads:', error);
+                console.error('❌ Frontend: Error loading campaign leads:', error);
                 document.getElementById('modalLeadsTableBody').innerHTML = '<tr><td colspan="10">Error loading leads</td></tr>';
             }
         }

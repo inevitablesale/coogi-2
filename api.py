@@ -2464,10 +2464,15 @@ async def get_instantly_leads():
 async def get_instantly_campaign_leads(campaign_id: str):
     """Get leads for a specific Instantly.ai campaign"""
     try:
+        logger.info(f"🔍 API: Getting leads for campaign {campaign_id}")
         leads = instantly_manager.get_leads_for_campaign(campaign_id)
+        logger.info(f"📊 API: Retrieved {len(leads)} leads for campaign {campaign_id}")
+        logger.info(f"📋 API: First few leads: {leads[:3] if leads else 'No leads'}")
         return {"campaign_id": campaign_id, "leads": leads, "total_leads": len(leads)}
     except Exception as e:
         logger.error(f"Error fetching leads for campaign {campaign_id}: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/instantly-leads/{lead_id}")

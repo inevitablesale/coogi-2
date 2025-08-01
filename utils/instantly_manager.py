@@ -130,17 +130,24 @@ class InstantlyManager:
     def get_leads_for_campaign(self, campaign_id: str) -> List[Dict[str, Any]]:
         """Get leads for a specific campaign"""
         try:
+            logger.info(f"🔍 Getting leads for campaign {campaign_id}")
+            
             # First, get the campaign details to find the lead list
             campaign = self.get_campaign(campaign_id)
             if not campaign:
                 logger.error(f"Campaign {campaign_id} not found")
                 return []
             
+            logger.info(f"📋 Campaign details: {campaign}")
+            
             # Get the lead list ID from the campaign
             lead_list_id = campaign.get('lead_list_id')
             if not lead_list_id:
                 logger.error(f"No lead list found for campaign {campaign_id}")
+                logger.error(f"Campaign data: {campaign}")
                 return []
+            
+            logger.info(f"📝 Lead list ID: {lead_list_id}")
             
             # Get leads from the lead list
             url = f"{self.base_url}/api/v2/lead-lists/{lead_list_id}/leads"
@@ -149,10 +156,14 @@ class InstantlyManager:
                 "Content-Type": "application/json"
             }
             
+            logger.info(f"🌐 Making request to: {url}")
             response = requests.get(url, headers=headers, timeout=30)
+            
+            logger.info(f"📡 Response status: {response.status_code}")
             
             if response.status_code == 200:
                 data = response.json()
+                logger.info(f"📊 Raw response data: {data}")
                 
                 # Extract leads from the response
                 if isinstance(data, dict) and 'items' in data:
@@ -163,6 +174,7 @@ class InstantlyManager:
                     logger.info(f"✅ Successfully retrieved {len(leads)} leads for campaign {campaign_id}")
                 else:
                     logger.error(f"Unexpected response structure: {type(data)}")
+                    logger.error(f"Response data: {data}")
                     return []
                 
                 # Ensure leads is a list
@@ -170,9 +182,13 @@ class InstantlyManager:
                     logger.error(f"Expected list of leads, got: {type(leads)}")
                     return []
                 
+                logger.info(f"🔧 Processing {len(leads)} leads")
+                
                 # Enhance with additional data based on API schema
-                for lead in leads:
+                for i, lead in enumerate(leads):
                     if isinstance(lead, dict):
+                        logger.info(f"🔧 Processing lead {i+1}: {lead}")
+                        
                         # Map API fields to dashboard fields
                         lead['name'] = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
                         lead['company'] = lead.get('company_name', lead.get('company', 'N/A'))
@@ -192,7 +208,10 @@ class InstantlyManager:
                         # Add email verification status
                         lead['email_verified'] = lead.get('email_verified', False)
                         lead['duplicate_check'] = lead.get('duplicate_check', False)
+                        
+                        logger.info(f"✅ Processed lead {i+1}: {lead['name']} - {lead['email']}")
                 
+                logger.info(f"🎉 Returning {len(leads)} processed leads")
                 return leads
             else:
                 logger.error(f"Failed to get leads for campaign {campaign_id}: {response.status_code} - {response.text}")
@@ -200,6 +219,8 @@ class InstantlyManager:
             
         except Exception as e:
             logger.error(f"Error getting leads for campaign {campaign_id}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return []
 
     def _remove_duplicate_leads(self, leads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
