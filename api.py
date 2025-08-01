@@ -1370,8 +1370,35 @@ async def process_jobs_background(request: JobSearchRequest):
         # Generate batch ID
         batch_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
-        # Mark search as active
+        # Mark search as active in memory
         active_searches[batch_id] = False  # False = not cancelled
+        
+        # Save agent to Supabase for persistence
+        try:
+            agent_data = {
+                "batch_id": batch_id,
+                "query": request.query,
+                "hours_old": request.hours_old,
+                "enforce_salary": request.enforce_salary,
+                "auto_generate_messages": request.auto_generate_messages,
+                "create_campaigns": request.create_campaigns,
+                "campaign_name": request.campaign_name,
+                "min_score": request.min_score,
+                "status": "processing",
+                "start_time": datetime.now().isoformat(),
+                "total_cities": 55,  # All 55 cities
+                "processed_cities": 0,
+                "processed_companies": 0,
+                "total_jobs_found": 0
+            }
+            
+            # Insert agent into Supabase
+            result = supabase.table("agent_analytics").insert(agent_data).execute()
+            logger.info(f"✅ Agent saved to Supabase: {batch_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error saving agent to Supabase: {e}")
+            # Continue processing even if Supabase save fails
         
         # Parse query for background processing
         search_params = job_scraper.parse_query(request.query)
@@ -1434,7 +1461,7 @@ async def get_search_status(batch_id: str):
 
 @app.get("/active-searches")
 async def get_active_searches():
-    """Get all active searches"""
+    """Get all active searches from memory"""
     try:
         active = {batch_id: not cancelled for batch_id, cancelled in active_searches.items() if not cancelled}
         cancelled = {batch_id: cancelled for batch_id, cancelled in active_searches.items() if cancelled}
@@ -1450,6 +1477,38 @@ async def get_active_searches():
         logger.error(f"Error getting active searches: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/agents")
+async def get_agents():
+    """Get all agents from Supabase"""
+    try:
+        # Get all agents from agent_analytics table
+        result = supabase.table("agent_analytics").select("*").order("start_time", desc=True).limit(50).execute()
+        
+        agents = []
+        for agent in result.data:
+            agents.append({
+                "batch_id": agent["batch_id"],
+                "query": agent["query"],
+                "status": agent["status"],
+                "start_time": agent["start_time"],
+                "end_time": agent.get("end_time"),
+                "total_cities": agent["total_cities"],
+                "processed_cities": agent["processed_cities"],
+                "processed_companies": agent["processed_companies"],
+                "total_jobs_found": agent["total_jobs_found"],
+                "hours_old": agent["hours_old"],
+                "create_campaigns": agent["create_campaigns"]
+            })
+        
+        return {
+            "agents": agents,
+            "total_agents": len(agents)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting agents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request: JobSearchRequest):
     """Background task to process jobs with city-by-city flow: City → Companies → Contacts → Next City"""
     try:
@@ -1459,12 +1518,33 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
         # Log start of processing
         await log_to_supabase(batch_id, f"🚀 Starting city-by-city processing for query: {request.query}", "info")
         
+        # Update agent status to "processing"
+        try:
+            supabase.table("agent_analytics").update({
+                "status": "processing",
+                "start_time": datetime.now().isoformat()
+            }).eq("batch_id", batch_id).execute()
+        except Exception as e:
+            logger.error(f"❌ Error updating agent status: {e}")
+        
         # Get search parameters for city-by-city processing
         search_params = job_scraper.parse_query(request.query)
         await log_to_supabase(batch_id, f"📋 Parsed search parameters: {search_params}", "info")
         
-        # Define cities to process (for now, just top 5 cities for testing)
-        cities_to_process = ["New York, NY", "Los Angeles, CA", "Chicago, IL", "Houston, TX", "San Francisco, CA"]
+        # Define cities to process (all 55 major US cities)
+        cities_to_process = [
+            "New York, NY", "Los Angeles, CA", "Chicago, IL", "Houston, TX", "Phoenix, AZ",
+            "Philadelphia, PA", "San Antonio, TX", "San Diego, CA", "Dallas, TX", "San Jose, CA",
+            "Austin, TX", "Jacksonville, FL", "Fort Worth, TX", "Columbus, OH", "Charlotte, NC",
+            "San Francisco, CA", "Indianapolis, IN", "Seattle, WA", "Denver, CO", "Washington, DC",
+            "Boston, MA", "El Paso, TX", "Nashville, TN", "Detroit, MI", "Oklahoma City, OK",
+            "Portland, OR", "Las Vegas, NV", "Memphis, TN", "Louisville, KY", "Baltimore, MD",
+            "Milwaukee, WI", "Albuquerque, NM", "Tucson, AZ", "Fresno, CA", "Sacramento, CA",
+            "Mesa, AZ", "Kansas City, MO", "Atlanta, GA", "Long Beach, CA", "Colorado Springs, CO",
+            "Raleigh, NC", "Miami, FL", "Virginia Beach, VA", "Omaha, NE", "Oakland, CA",
+            "Minneapolis, MN", "Tampa, FL", "Tulsa, OK", "Arlington, TX", "New Orleans, LA",
+            "Wichita, KS", "Cleveland, OH", "Bakersfield, CA", "Aurora, CO", "Anaheim, CA"
+        ]
         await log_to_supabase(batch_id, f"🏙️ Will process {len(cities_to_process)} cities: {', '.join(cities_to_process)}", "info")
         
         for city_index, city in enumerate(cities_to_process):
@@ -1497,6 +1577,14 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                 )
                 
                 await log_to_supabase(batch_id, f"✅ Step 1 Complete: Found {len(city_jobs)} jobs in {city}", "success")
+                
+                # Update total jobs found
+                try:
+                    supabase.table("agent_analytics").update({
+                        "total_jobs_found": supabase.table("agent_analytics").select("total_jobs_found").eq("batch_id", batch_id).execute().data[0]["total_jobs_found"] + len(city_jobs)
+                    }).eq("batch_id", batch_id).execute()
+                except Exception as e:
+                    logger.error(f"❌ Error updating total jobs: {e}")
                 
                 # Step 2: Process companies from this city
                 processed_companies = set()
@@ -1665,6 +1753,14 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                         results.append(result)
                         processed_count += 1
                         
+                        # Update processed companies count
+                        try:
+                            supabase.table("agent_analytics").update({
+                                "processed_companies": supabase.table("agent_analytics").select("processed_companies").eq("batch_id", batch_id).execute().data[0]["processed_companies"] + 1
+                            }).eq("batch_id", batch_id).execute()
+                        except Exception as e:
+                            logger.error(f"❌ Error updating processed companies: {e}")
+                        
                         await log_to_supabase(batch_id, f"✅ Step 3 Complete: Finished analysis for {company} in {city}", "success", company)
                         
                     except Exception as e:
@@ -1677,6 +1773,14 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                 
                 await log_to_supabase(batch_id, f"✅ City Complete: Finished processing {city} - {len(processed_companies)} companies analyzed", "success")
                 
+                # Update processed cities count
+                try:
+                    supabase.table("agent_analytics").update({
+                        "processed_cities": supabase.table("agent_analytics").select("processed_cities").eq("batch_id", batch_id).execute().data[0]["processed_cities"] + 1
+                    }).eq("batch_id", batch_id).execute()
+                except Exception as e:
+                    logger.error(f"❌ Error updating processed cities: {e}")
+                
                 # Rate limiting between cities
                 if city_index < len(cities_to_process) - 1:
                     await log_to_supabase(batch_id, f"⏳ Waiting 2 seconds before next city...", "info")
@@ -1688,6 +1792,18 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
         
         # Send final webhook with all results
         await log_to_supabase(batch_id, f"🎉 Processing complete! Analyzed {processed_count} companies across {len(cities_to_process)} cities", "success")
+        
+        # Update agent status to completed
+        try:
+            supabase.table("agent_analytics").update({
+                "status": "completed",
+                "end_time": datetime.now().isoformat(),
+                "total_companies_processed": processed_count,
+                "total_cities_processed": len(cities_to_process)
+            }).eq("batch_id", batch_id).execute()
+            logger.info(f"✅ Agent {batch_id} marked as completed")
+        except Exception as e:
+            logger.error(f"❌ Error updating agent completion status: {e}")
         
         webhook_data = WebhookRequest(
             batch_id=batch_id,

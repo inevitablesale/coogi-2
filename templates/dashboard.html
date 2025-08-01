@@ -1018,6 +1018,14 @@
                                 <div class="stat-label">Jobs</div>
                             </div>
                             <div class="stat">
+                                <div class="stat-value">${agent.processedCities}/${agent.totalCities}</div>
+                                <div class="stat-label">Cities</div>
+                            </div>
+                            <div class="stat">
+                                <div class="stat-value">${agent.processedCompanies}</div>
+                                <div class="stat-label">Companies</div>
+                            </div>
+                            <div class="stat">
                                 <div class="stat-value">${minutes}m ${seconds}s</div>
                                 <div class="stat-label">Runtime</div>
                             </div>
@@ -1220,28 +1228,32 @@
         // Load active agents from Supabase
         async function loadActiveAgents() {
             try {
-                const response = await fetch(`${RAILWAY_API}/active-searches`);
+                const response = await fetch(`${RAILWAY_API}/agents`);
                 if (response.ok) {
                     const data = await response.json();
                     
-                    // Load each active agent
-                    for (const batchId of data.active_searches) {
-                        // Get agent details from batch
-                        const batchResponse = await fetch(`${RAILWAY_API}/batch/${batchId}`);
-                        if (batchResponse.ok) {
-                            const batchData = await batchResponse.json();
-                            
-                            // Add to active agents map
-                            activeAgents.set(batchId, {
-                                query: batchData.batch.query || 'Unknown',
-                                batchId: batchId,
-                                status: 'processing',
-                                startTime: new Date(batchData.batch.timestamp || Date.now()),
-                                jobsFound: batchData.total_results || 0
-                            });
-                            
-                            // Start monitoring this agent
-                            startAgentMonitoring(batchId);
+                    // Clear existing agents
+                    activeAgents.clear();
+                    
+                    // Load each agent from Supabase
+                    for (const agent of data.agents) {
+                        // Add to active agents map
+                        activeAgents.set(agent.batch_id, {
+                            query: agent.query,
+                            batchId: agent.batch_id,
+                            status: agent.status,
+                            startTime: new Date(agent.start_time),
+                            jobsFound: agent.total_jobs_found || 0,
+                            processedCities: agent.processed_cities || 0,
+                            totalCities: agent.total_cities || 55,
+                            processedCompanies: agent.processed_companies || 0,
+                            hoursOld: agent.hours_old,
+                            createCampaigns: agent.create_campaigns
+                        });
+                        
+                        // Start monitoring if still processing
+                        if (agent.status === 'processing') {
+                            startAgentMonitoring(agent.batch_id);
                         }
                     }
                     
