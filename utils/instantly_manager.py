@@ -292,7 +292,6 @@ class InstantlyManager:
             
             payload = {
                 "name": name,
-                "status": 0,  # 0 = Draft status
                 "campaign_schedule": {
                     "schedules": [
                         {
@@ -310,7 +309,7 @@ class InstantlyManager:
                                 "5": False, # Saturday
                                 "6": False  # Sunday
                             },
-                            "timezone": "America/Chicago"
+                            "timezone": "America/New_York"
                         }
                     ]
                 },
@@ -318,21 +317,33 @@ class InstantlyManager:
                     {
                         "steps": [
                             {
-                                "type": "email",
-                                "delay": 0,
-                                "variants": [
-                                    {
-                                        "subject": subject_line,
-                                        "body": message_template,
-                                        "sender_email": sender_email,
-                                        "sender_name": sender_name
-                                    }
-                                ]
+                                "step": 1,
+                                "subject": subject_line,
+                                "body": message_template
                             }
                         ]
                     }
-                ]
+                ],
+                "email_gap": 10,
+                "random_wait_max": 5,
+                "text_only": False,
+                "daily_limit": 50,
+                "stop_on_reply": True,
+                "link_tracking": True,
+                "open_tracking": True,
+                "stop_on_auto_reply": False,
+                "daily_max_leads": 25,
+                "prioritize_new_leads": False,
+                "match_lead_esp": False,
+                "stop_for_company": False,
+                "insert_unsubscribe_header": True,
+                "allow_risky_contacts": False,
+                "disable_bounce_protect": False
             }
+            
+            # Add email list if sender_email is provided
+            if sender_email:
+                payload["email_list"] = [sender_email]
             
             # Add lead list reference if provided
             if lead_list_id:
@@ -950,7 +961,7 @@ Contact: {{contact_title}}
 
     # Dashboard Methods
     def get_all_campaigns(self) -> List[Dict[str, Any]]:
-        """Get all campaigns for dashboard display using the correct API endpoint"""
+        """Get all campaigns for dashboard display using the correct GET /api/v2/campaigns endpoint"""
         try:
             url = f"{self.base_url}/api/v2/campaigns"
             headers = {
@@ -963,16 +974,10 @@ Contact: {{contact_title}}
             if response.status_code == 200:
                 data = response.json()
                 
-                # Handle different response structures
-                if isinstance(data, list):
-                    campaigns = data
-                elif isinstance(data, dict) and 'data' in data:
-                    campaigns = data['data']
-                elif isinstance(data, dict) and 'campaigns' in data:
-                    campaigns = data['campaigns']
-                elif isinstance(data, dict):
-                    # If it's a single campaign dict, wrap it in a list
-                    campaigns = [data]
+                # Extract campaigns from the 'items' field as per API documentation
+                if isinstance(data, dict) and 'items' in data:
+                    campaigns = data['items']
+                    logger.info(f"✅ Successfully retrieved {len(campaigns)} campaigns from /api/v2/campaigns")
                 else:
                     logger.error(f"Unexpected response structure: {type(data)}")
                     return []
@@ -991,12 +996,11 @@ Contact: {{contact_title}}
                             if analytics:
                                 campaign.update(analytics)
                 
-                logger.info(f"✅ Successfully retrieved {len(campaigns)} campaigns")
                 return campaigns
             else:
                 logger.error(f"Failed to get campaigns: {response.status_code} - {response.text}")
                 return []
-            
+                
         except Exception as e:
             logger.error(f"Error getting campaigns: {e}")
             return []
