@@ -2339,11 +2339,63 @@ async def get_recent_activity(limit: int = 10):
 
 # Instantly.ai Integration Endpoints
 @app.get("/instantly-campaigns")
-async def get_instantly_campaigns():
-    """Get all Instantly.ai campaigns"""
+async def get_instantly_campaigns(batch_id: Optional[str] = None):
+    """Get all Instantly.ai campaigns, optionally filtered by batch_id"""
     try:
-        campaigns = instantly_manager.get_all_campaigns()
-        return campaigns
+        if batch_id:
+            # Get campaigns for specific batch from our database
+            if supabase:
+                try:
+                    response = supabase.table("instantly_campaigns").select("*").eq("batch_id", batch_id).execute()
+                    campaigns = []
+                    for campaign in response.data:
+                        # Get additional details from Instantly.ai if campaign_id exists
+                        if campaign.get("campaign_id"):
+                            try:
+                                instantly_campaign = instantly_manager.get_campaign(campaign["campaign_id"])
+                                if instantly_campaign:
+                                    campaigns.append({
+                                        "id": campaign["campaign_id"],
+                                        "name": campaign["campaign_name"] or instantly_campaign.get("name", "Unknown"),
+                                        "status": instantly_campaign.get("status", "unknown"),
+                                        "leads_count": campaign["leads_added"],
+                                        "batch_id": campaign["batch_id"],
+                                        "company": campaign["company"],
+                                        "created_at": campaign["timestamp"]
+                                    })
+                                else:
+                                    # Fallback to database data
+                                    campaigns.append({
+                                        "id": campaign["campaign_id"],
+                                        "name": campaign["campaign_name"] or "Unknown",
+                                        "status": "unknown",
+                                        "leads_count": campaign["leads_added"],
+                                        "batch_id": campaign["batch_id"],
+                                        "company": campaign["company"],
+                                        "created_at": campaign["timestamp"]
+                                    })
+                            except Exception as e:
+                                logger.warning(f"Could not fetch Instantly campaign {campaign['campaign_id']}: {e}")
+                                # Fallback to database data
+                                campaigns.append({
+                                    "id": campaign["campaign_id"],
+                                    "name": campaign["campaign_name"] or "Unknown",
+                                    "status": "unknown",
+                                    "leads_count": campaign["leads_added"],
+                                    "batch_id": campaign["batch_id"],
+                                    "company": campaign["company"],
+                                    "created_at": campaign["timestamp"]
+                                })
+                    return campaigns
+                except Exception as e:
+                    logger.error(f"Error fetching campaigns for batch {batch_id}: {e}")
+                    return []
+            else:
+                return []
+        else:
+            # Return all campaigns from Instantly.ai (original behavior)
+            campaigns = instantly_manager.get_all_campaigns()
+            return campaigns
     except Exception as e:
         logger.error(f"Error fetching Instantly campaigns: {e}")
         raise HTTPException(status_code=500, detail=str(e))

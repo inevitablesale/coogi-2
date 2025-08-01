@@ -389,13 +389,13 @@
 
         async function loadCampaigns() {
             try {
-                const response = await fetch(`${RAILWAY_API}/instantly-campaigns`);
+                const response = await fetch(`${RAILWAY_API}/instantly-campaigns?batch_id=${batchId}`);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
                 const campaigns = await response.json();
-                const agentCampaigns = campaigns.filter(campaign => campaign.batch_id === batchId) || [];
+                const agentCampaigns = campaigns || [];
                 
                 const container = document.getElementById('campaignsContainer');
                 if (agentCampaigns.length > 0) {
@@ -445,7 +445,11 @@
                            log.message.includes('found') || 
                            log.message.includes('name:') ||
                            log.message.includes('title:') ||
-                           log.message.includes('company:');
+                           log.message.includes('company:') ||
+                           log.message.includes('Created lead') ||
+                           log.message.includes('Added LinkedIn URL') ||
+                           log.message.includes('Hunter.io emails') ||
+                           log.message.includes('Found contact');
                 }) || [];
                 
                 const container = document.getElementById('contactsContainer');
