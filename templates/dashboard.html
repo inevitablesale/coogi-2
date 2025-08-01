@@ -1327,7 +1327,7 @@
         // Load leads
         async function loadLeads() {
             try {
-                const response = await fetch(`${API_BASE}/instantly-leads`);
+                const response = await fetch(`${RAILWAY_API}/instantly-leads`);
                 if (response.ok) {
                     const leads = await response.json();
                     renderLeads(leads);
@@ -1370,7 +1370,7 @@
         // Load Instantly stats
         async function loadInstantlyStats() {
             try {
-                const response = await fetch(`${API_BASE}/instantly-stats`);
+                const response = await fetch(`${RAILWAY_API}/instantly-stats`);
                 if (response.ok) {
                     const stats = await response.json();
                     updateInstantlyStats(stats);
@@ -1411,7 +1411,7 @@
         // Campaign actions
         async function viewCampaign(campaignId) {
             try {
-                const response = await fetch(`${API_BASE}/instantly-campaigns/${campaignId}`);
+                const response = await fetch(`${RAILWAY_API}/instantly-campaigns/${campaignId}`);
                 if (response.ok) {
                     const campaign = await response.json();
                     alert(`Campaign: ${campaign.name}\nLeads: ${campaign.leads_count}\nStatus: ${campaign.status}`);
@@ -1423,7 +1423,7 @@
 
         async function activateCampaign(campaignId) {
             try {
-                const response = await fetch(`${API_BASE}/instantly-campaigns/${campaignId}/activate`, {
+                const response = await fetch(`${RAILWAY_API}/instantly-campaigns/${campaignId}/activate`, {
                     method: 'POST'
                 });
                 if (response.ok) {
@@ -1437,7 +1437,7 @@
 
         async function pauseCampaign(campaignId) {
             try {
-                const response = await fetch(`${API_BASE}/instantly-campaigns/${campaignId}/pause`, {
+                const response = await fetch(`${RAILWAY_API}/instantly-campaigns/${campaignId}/pause`, {
                     method: 'POST'
                 });
                 if (response.ok) {
@@ -1452,7 +1452,7 @@
         // Lead actions
         async function viewLead(leadId) {
             try {
-                const response = await fetch(`${API_BASE}/instantly-leads/${leadId}`);
+                const response = await fetch(`${RAILWAY_API}/instantly-leads/${leadId}`);
                 if (response.ok) {
                     const lead = await response.json();
                     alert(`Lead: ${lead.name}\nCompany: ${lead.company}\nEmail: ${lead.email}\nScore: ${Math.round(lead.score * 100)}%`);
@@ -1464,7 +1464,7 @@
 
         async function exportLead(leadId) {
             try {
-                const response = await fetch(`${API_BASE}/instantly-leads/${leadId}/export`, {
+                const response = await fetch(`${RAILWAY_API}/instantly-leads/${leadId}/export`, {
                     method: 'POST'
                 });
                 if (response.ok) {
