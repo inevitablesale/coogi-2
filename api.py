@@ -1459,22 +1459,19 @@ async def process_jobs_background(request: JobSearchRequest, current_user: Dict 
         # Save agent to Supabase for persistence
         try:
             agent_data = {
-                "batch_id": batch_id,
+                "name": f"Agent: {request.query[:50]}...",  # Use query as name
+                "prompt": request.query,  # Use query as prompt
                 "user_id": current_user["user_id"],
-                "user_email": current_user["email"],
-                "query": request.query,
-                "hours_old": request.hours_old,
-                "enforce_salary": request.enforce_salary,
-                "auto_generate_messages": request.auto_generate_messages,
-                "create_campaigns": request.create_campaigns,
-                "campaign_name": request.campaign_name,
-                "min_score": request.min_score,
-                "status": "processing",
-                "start_time": datetime.now().isoformat(),
-                "total_cities": 55,  # All 55 cities
-                "processed_cities": 0,
-                "processed_companies": 0,
-                "total_jobs_found": 0
+                "search_lookback_hours": request.hours_old,
+                "max_results": 50,  # Default max results
+                "job_type": "fulltime",  # Default job type
+                "is_remote": True,  # Default to remote
+                "country": "us",  # Default country
+                "site_names": ["indeed", "linkedin", "zip_recruiter", "google", "glassdoor"],
+                "distance": 25,  # Default distance
+                "is_active": True,
+                "autonomy_level": "semi-automatic",
+                "run_frequency": "Manual"
             }
             
             # Insert agent into Supabase
