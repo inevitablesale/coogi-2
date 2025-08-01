@@ -804,7 +804,7 @@
         // Load agent templates
         async function loadAgentTemplates() {
             try {
-                const response = await fetch(`${API_BASE}/agent-templates`);
+                const response = await fetch(`${RAILWAY_API}/agent-templates`);
                 if (response.ok) {
                     agentTemplates = await response.json();
                     renderTemplates();
@@ -844,7 +844,7 @@
         // Load dashboard stats
         async function loadDashboardStats() {
             try {
-                const response = await fetch(`${API_BASE}/dashboard-stats`);
+                const response = await fetch(`${RAILWAY_API}/dashboard-stats`);
                 if (response.ok) {
                     dashboardStats = await response.json();
                     updateStatsDisplay();
@@ -865,7 +865,7 @@
         // Load recent activity
         async function loadRecentActivity() {
             try {
-                const response = await fetch(`${API_BASE}/recent-activity`);
+                const response = await fetch(`${RAILWAY_API}/recent-activity`);
                 if (response.ok) {
                     const activities = await response.json();
                     renderRecentActivity(activities);
@@ -1037,7 +1037,7 @@
         // Cancel agent
         async function cancelAgent(batchId) {
             try {
-                const response = await fetch(`${API_BASE}/cancel-search/${batchId}`, {
+                const response = await fetch(`${RAILWAY_API}/cancel-search/${batchId}`, {
                     method: 'POST'
                 });
 
@@ -1215,14 +1215,14 @@
         // Load active agents from Supabase
         async function loadActiveAgents() {
             try {
-                const response = await fetch(`${API_BASE}/active-searches`);
+                const response = await fetch(`${RAILWAY_API}/active-searches`);
                 if (response.ok) {
                     const data = await response.json();
                     
                     // Load each active agent
                     for (const batchId of data.active_searches) {
                         // Get agent details from batch
-                        const batchResponse = await fetch(`${API_BASE}/batch/${batchId}`);
+                        const batchResponse = await fetch(`${RAILWAY_API}/batch/${batchId}`);
                         if (batchResponse.ok) {
                             const batchData = await batchResponse.json();
                             
@@ -1270,7 +1270,7 @@
         // Load campaigns
         async function loadCampaigns() {
             try {
-                const response = await fetch(`${API_BASE}/instantly-campaigns`);
+                const response = await fetch(`${RAILWAY_API}/instantly-campaigns`);
                 if (response.ok) {
                     const campaigns = await response.json();
                     renderCampaigns(campaigns);
