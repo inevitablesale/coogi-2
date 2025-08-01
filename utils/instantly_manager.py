@@ -648,24 +648,38 @@ class InstantlyManager:
             return False
             
         try:
-            # Step 1: Verify emails before adding
+            # Step 1: Verify emails before adding using Hunter.io
             verified_leads = []
             for lead in leads:
                 email = lead.get("email", "")
                 if email:
-                    # Verify email using Instantly's verification endpoint
+                    # Verify email using Hunter.io Email Verifier API
                     verification_result = self.verify_email(email)
-                    if verification_result.get('valid', False):
-                        lead['email_verified'] = True
-                        lead['verification_score'] = verification_result.get('score', 0)
-                        verified_leads.append(lead)
-                        logger.info(f"✅ Email verified: {email} (score: {verification_result.get('score', 0)})")
+                    
+                    # Extract verification details
+                    status = verification_result.get('status', 'unknown')
+                    score = verification_result.get('score', 0)
+                    valid = verification_result.get('valid', False)
+                    
+                    # Store detailed verification info
+                    lead['email_verified'] = valid
+                    lead['verification_score'] = score
+                    lead['verification_status'] = status
+                    lead['verification_details'] = {
+                        'disposable': verification_result.get('disposable', False),
+                        'webmail': verification_result.get('webmail', False),
+                        'gibberish': verification_result.get('gibberish', False),
+                        'mx_records': verification_result.get('mx_records', False),
+                        'smtp_check': verification_result.get('smtp_check', False),
+                        'accept_all': verification_result.get('accept_all', False)
+                    }
+                    
+                    if valid:
+                        logger.info(f"✅ Email verified: {email} (status: {status}, score: {score})")
                     else:
-                        logger.warning(f"⚠️ Email verification failed: {email} - {verification_result.get('reason', 'Unknown')}")
-                        # Still add the lead but mark as unverified
-                        lead['email_verified'] = False
-                        lead['verification_score'] = 0
-                        verified_leads.append(lead)
+                        logger.warning(f"⚠️ Email verification failed: {email} (status: {status}, score: {score})")
+                    
+                    verified_leads.append(lead)
                 else:
                     logger.warning(f"⚠️ No email provided for lead: {lead.get('name', 'Unknown')}")
                     verified_leads.append(lead)
@@ -694,7 +708,14 @@ class InstantlyManager:
                         "contact_title": lead.get("title", ""),  # For template personalization
                         "linkedin_url": lead.get("linkedin_url", ""),
                         "email_verified": str(lead.get("email_verified", False)),
-                        "verification_score": str(lead.get("verification_score", 0))
+                        "verification_score": str(lead.get("verification_score", 0)),
+                        "verification_status": lead.get("verification_status", "unknown"),
+                        "disposable_email": str(lead.get("verification_details", {}).get("disposable", False)),
+                        "webmail": str(lead.get("verification_details", {}).get("webmail", False)),
+                        "gibberish": str(lead.get("verification_details", {}).get("gibberish", False)),
+                        "mx_records": str(lead.get("verification_details", {}).get("mx_records", False)),
+                        "smtp_check": str(lead.get("verification_details", {}).get("smtp_check", False)),
+                        "accept_all": str(lead.get("verification_details", {}).get("accept_all", False))
                     }
                 }
                 formatted_leads.append(formatted_lead)
@@ -1656,35 +1677,70 @@ Contact: {{contact_title}}
             return {}
 
     def verify_email(self, email: str, webhook_url: str = None) -> Dict[str, Any]:
-        """Verify an email address using POST /api/v2/email-verification"""
+        """Verify an email address using Hunter.io Email Verifier API"""
         try:
-            url = f"{self.base_url}/api/v2/email-verification"
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
+            # Get Hunter.io API key from environment
+            hunter_api_key = os.getenv("HUNTER_API_KEY")
+            if not hunter_api_key:
+                logger.warning("HUNTER_API_KEY not found in environment, skipping email verification")
+                return {"valid": False, "score": 0, "status": "unknown", "error": "No Hunter API key"}
+            
+            url = "https://api.hunter.io/v2/email-verifier"
+            params = {
+                "email": email,
+                "api_key": hunter_api_key
             }
             
-            payload = {
-                "email": email
-            }
-            
-            # Add webhook URL if provided
-            if webhook_url:
-                payload["webhook_url"] = webhook_url
-            
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response = requests.get(url, params=params, timeout=30)
             
             if response.status_code == 200:
                 data = response.json()
-                logger.info(f"✅ Successfully initiated email verification for {email}")
-                return data
+                verification_data = data.get("data", {})
+                
+                # Map Hunter.io status to our format
+                status = verification_data.get("status", "unknown")
+                score = verification_data.get("score", 0)
+                
+                # Determine if email is valid based on Hunter.io status
+                valid = status in ["valid", "accept_all", "webmail"]
+                
+                result = {
+                    "valid": valid,
+                    "score": score,
+                    "status": status,
+                    "email": email,
+                    "regexp": verification_data.get("regexp", False),
+                    "gibberish": verification_data.get("gibberish", False),
+                    "disposable": verification_data.get("disposable", False),
+                    "webmail": verification_data.get("webmail", False),
+                    "mx_records": verification_data.get("mx_records", False),
+                    "smtp_server": verification_data.get("smtp_server", False),
+                    "smtp_check": verification_data.get("smtp_check", False),
+                    "accept_all": verification_data.get("accept_all", False),
+                    "block": verification_data.get("block", False),
+                    "sources": verification_data.get("sources", [])
+                }
+                
+                logger.info(f"✅ Successfully verified email {email}: status={status}, score={score}, valid={valid}")
+                return result
+                
+            elif response.status_code == 202:
+                # Verification is still in progress, retry after a delay
+                logger.info(f"⏳ Email verification for {email} is still in progress, retrying...")
+                time.sleep(2)
+                return self.verify_email(email, webhook_url)  # Retry once
+                
+            elif response.status_code == 451:
+                logger.warning(f"🚫 Email {email} is claimed (user requested no processing)")
+                return {"valid": False, "score": 0, "status": "claimed", "error": "Email claimed by user"}
+                
             else:
                 logger.error(f"Failed to verify email {email}: {response.status_code} - {response.text}")
-                return {}
+                return {"valid": False, "score": 0, "status": "error", "error": f"API error: {response.status_code}"}
                 
         except Exception as e:
             logger.error(f"Error verifying email {email}: {e}")
-            return {}
+            return {"valid": False, "score": 0, "status": "error", "error": str(e)}
 
     def check_email_verification_status(self, email: str) -> Dict[str, Any]:
         """Check email verification status using GET /api/v2/email-verification/{email}"""

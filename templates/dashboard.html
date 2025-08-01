@@ -640,6 +640,52 @@
             font-weight: bold; 
         }
 
+        .verification-details {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .verification-score {
+            font-size: 0.8rem;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .verification-flags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 2px;
+        }
+
+        .flag {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .flag.disposable {
+            background: #fed7d7;
+            color: #c53030;
+        }
+
+        .flag.webmail {
+            background: #bee3f8;
+            color: #2b6cb0;
+        }
+
+        .flag.gibberish {
+            background: #fef5e7;
+            color: #d69e2e;
+        }
+
+        .flag.accept-all {
+            background: #fef5e7;
+            color: #d69e2e;
+        }
+
         .modal-actions {
             display: flex;
             align-items: center;
@@ -907,7 +953,7 @@
                                 <th>Email</th>
                                 <th>LinkedIn</th>
                                 <th>Score</th>
-                                <th>Email Verified</th>
+                                <th>Verification</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
@@ -1707,9 +1753,22 @@
                         </span>
                     </td>
                     <td>
-                        <span class="verification-status ${lead.email_verified ? 'verified' : 'unverified'}">
-                            ${lead.email_verified ? '✅ Verified' : '❌ Unverified'}
-                        </span>
+                        <div class="verification-details">
+                            <span class="verification-status ${lead.email_verified ? 'verified' : 'unverified'}">
+                                ${lead.email_verified ? '✅' : '❌'} ${lead.verification_status || 'Unknown'}
+                            </span>
+                            <div class="verification-score">
+                                Score: ${lead.verification_score || 0}
+                            </div>
+                            ${lead.verification_details ? `
+                                <div class="verification-flags">
+                                    ${lead.verification_details.disposable ? '<span class="flag disposable">🚫 Disposable</span>' : ''}
+                                    ${lead.verification_details.webmail ? '<span class="flag webmail">📧 Webmail</span>' : ''}
+                                    ${lead.verification_details.gibberish ? '<span class="flag gibberish">🤖 Gibberish</span>' : ''}
+                                    ${lead.verification_details.accept_all ? '<span class="flag accept-all">⚠️ Accept All</span>' : ''}
+                                </div>
+                            ` : ''}
+                        </div>
                     </td>
                     <td>${lead.status || 'N/A'}</td>
                     <td>
