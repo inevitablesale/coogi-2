@@ -85,8 +85,7 @@ active_searches = {}  # batch_id -> cancellation flag
 async def get_current_user(authorization: Optional[str] = Header(None)):
     """Get current user from authorization header"""
     if not authorization:
-        # For now, return a default user ID for development
-        # In production, this would validate the JWT token
+        logger.warning("No authorization header provided")
         return {"user_id": "default_user", "email": "default@example.com"}
     
     try:
@@ -94,17 +93,23 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
         # For now, extract user info from header if present
         if authorization.startswith("Bearer "):
             token = authorization.replace("Bearer ", "")
+            logger.info(f"Processing Bearer token: {token[:20]}...")
             
             # Try to decode JWT token (Supabase Auth)
             try:
                 import jwt
                 # Decode without verification for now (in production, verify with Supabase public key)
                 decoded = jwt.decode(token, options={"verify_signature": False})
+                logger.info(f"JWT decoded successfully: {decoded}")
+                
                 user_id = decoded.get("sub", "unknown")
                 email = decoded.get("email", "unknown@example.com")
+                
+                logger.info(f"Extracted user_id: {user_id}, email: {email}")
                 return {"user_id": user_id, "email": email}
+                
             except Exception as jwt_error:
-                logger.warning(f"JWT decode failed, trying fallback: {jwt_error}")
+                logger.warning(f"JWT decode failed: {jwt_error}")
                 
                 # Fallback to simple token parsing for development
                 if token == "default_token":
@@ -117,6 +122,8 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
                     else:
                         # If token doesn't match expected format, use it as user_id
                         return {"user_id": token, "email": f"{token}@example.com"}
+        else:
+            logger.warning(f"Authorization header doesn't start with 'Bearer ': {authorization[:20]}...")
         
         return {"user_id": "default_user", "email": "default@example.com"}
     except Exception as e:
@@ -1559,27 +1566,37 @@ async def get_active_searches():
 async def get_agents(current_user: Dict = Depends(get_current_user)):
     """Get all agents from Supabase"""
     try:
+        logger.info(f"Getting agents for user: {current_user}")
+        
+        if not supabase:
+            logger.error("Supabase client not initialized")
+            raise HTTPException(status_code=500, detail="Database not available")
+        
         # Get all agents from agent_analytics table
+        logger.info(f"Querying agent_analytics table for user_id: {current_user['user_id']}")
         result = supabase.table("agent_analytics").select("*").eq("user_id", current_user["user_id"]).order("start_time", desc=True).limit(50).execute()
+        
+        logger.info(f"Query result: {result}")
         
         agents = []
         for agent in result.data:
-                            agents.append({
-                    "batch_id": agent["batch_id"],
-                    "user_id": agent.get("user_id", "unknown"),
-                    "user_email": agent.get("user_email", "unknown"),
-                    "query": agent["query"],
-                    "status": agent["status"],
-                    "start_time": agent["start_time"],
-                    "end_time": agent.get("end_time"),
-                    "total_cities": agent["total_cities"],
-                    "processed_cities": agent["processed_cities"],
-                    "processed_companies": agent["processed_companies"],
-                    "total_jobs_found": agent["total_jobs_found"],
-                    "hours_old": agent["hours_old"],
-                    "create_campaigns": agent["create_campaigns"]
-                })
+            agents.append({
+                "batch_id": agent["batch_id"],
+                "user_id": agent.get("user_id", "unknown"),
+                "user_email": agent.get("user_email", "unknown"),
+                "query": agent["query"],
+                "status": agent["status"],
+                "start_time": agent["start_time"],
+                "end_time": agent.get("end_time"),
+                "total_cities": agent["total_cities"],
+                "processed_cities": agent["processed_cities"],
+                "processed_companies": agent["processed_companies"],
+                "total_jobs_found": agent["total_jobs_found"],
+                "hours_old": agent["hours_old"],
+                "create_campaigns": agent["create_campaigns"]
+            })
         
+        logger.info(f"Returning {len(agents)} agents")
         return {
             "agents": agents,
             "total_agents": len(agents)
@@ -1587,6 +1604,9 @@ async def get_agents(current_user: Dict = Depends(get_current_user)):
         
     except Exception as e:
         logger.error(f"Error getting agents: {e}")
+        logger.error(f"Error type: {type(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request: JobSearchRequest):
