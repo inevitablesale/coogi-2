@@ -1772,6 +1772,12 @@
                 const minutes = Math.floor(duration / 60);
                 const seconds = duration % 60;
                 
+                console.log(`🔍 Rendering agent ${batchId}:`, {
+                    status: agent.status,
+                    query: agent.query,
+                    isCompleted: agent.status === 'completed'
+                });
+                
                 return `
                     <div class="agent-card" onclick="viewAgentDetail('${batchId}')" style="cursor: pointer;">
                         <div class="agent-header">
@@ -1779,7 +1785,8 @@
                             <div class="agent-status">
                                 <div class="status-indicator status-${agent.status}"></div>
                                 ${agent.status === 'completed' ? `
-                                    <button onclick="event.stopPropagation(); showInstantlyCampaignSelector('${batchId}')" class="btn btn-secondary">🚀 Send to Instantly</button>
+                                    <button onclick="event.stopPropagation(); testButtonClick('${batchId}')" class="btn btn-secondary" style="background: #ff0000; color: #fff; font-weight: bold; padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; margin-right: 5px;">🧪 TEST BUTTON</button>
+                                    <button onclick="event.stopPropagation(); showInstantlyCampaignSelector('${batchId}')" class="btn btn-secondary" style="background: linear-gradient(135deg, #ff00ff 0%, #00ffff 100%); color: #000; font-weight: bold; padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; margin-right: 5px;">🚀 Send to Instantly</button>
                                 ` : ''}
                                 ${agent.status === 'processing' ? `
                                     <button onclick="event.stopPropagation(); cancelAgent('${batchId}')" class="btn btn-danger">🚫 Kill</button>
@@ -2226,17 +2233,32 @@
             return contacts;
         }
 
+        // Test function to check if button clicks work
+        function testButtonClick(batchId) {
+            console.log('🧪 Test button clicked for batchId:', batchId);
+            alert('Button click works! BatchId: ' + batchId);
+        }
+
         // Show campaign selector modal for sending contacts to Instantly
         async function showInstantlyCampaignSelector(batchId) {
+            console.log('🚀 showInstantlyCampaignSelector called with batchId:', batchId);
+            
             try {
+                showToast('🔄 Loading campaigns...', 'info');
+                
                 // Load available campaigns
                 const response = await fetch(`${RAILWAY_API}/instantly-campaigns`);
+                console.log('📡 Campaigns API response status:', response.status);
+                
                 if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ Campaigns API error:', errorText);
                     showToast('❌ Failed to load campaigns', 'error');
                     return;
                 }
 
                 const campaigns = await response.json();
+                console.log('📊 Loaded campaigns:', campaigns);
                 
                 if (!campaigns || campaigns.length === 0) {
                     showToast('❌ No campaigns found. Create a campaign first.', 'warning');
@@ -2270,9 +2292,10 @@
                 `;
 
                 document.body.appendChild(modal);
+                console.log('✅ Modal created and added to DOM');
                 
             } catch (error) {
-                console.error('Error showing campaign selector:', error);
+                console.error('❌ Error showing campaign selector:', error);
                 showToast(`❌ Error: ${error.message}`, 'error');
             }
         }
