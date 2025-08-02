@@ -1658,6 +1658,7 @@ async def process_jobs_background(request: JobSearchRequest, current_user: Dict 
         search_params = job_scraper.parse_query(request.query)
         
         # Process jobs in background (async) - will search jobs per city
+        # Add a small delay to ensure agent record is created first
         asyncio.create_task(process_jobs_background_task(batch_id, [], request))
         
         return {
@@ -2129,7 +2130,16 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                                     "processed_companies": current_count + 1
                                 }).eq("batch_id", batch_id).execute()
                             else:
-                                logger.warning(f"⚠️ No agent record found for batch_id: {batch_id}")
+                                # Retry once after a short delay in case agent record is still being created
+                                await asyncio.sleep(1)
+                                current_data = supabase.table("agents").select("processed_companies").eq("batch_id", batch_id).execute()
+                                if current_data.data and len(current_data.data) > 0:
+                                    current_count = current_data.data[0].get("processed_companies", 0)
+                                    supabase.table("agents").update({
+                                        "processed_companies": current_count + 1
+                                    }).eq("batch_id", batch_id).execute()
+                                else:
+                                    logger.warning(f"⚠️ No agent record found for batch_id: {batch_id} (after retry)")
                         except Exception as e:
                             logger.error(f"❌ Error updating processed companies: {e}")
                         
@@ -2154,7 +2164,16 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                             "processed_cities": current_count + 1
                         }).eq("batch_id", batch_id).execute()
                     else:
-                        logger.warning(f"⚠️ No agent record found for batch_id: {batch_id}")
+                        # Retry once after a short delay in case agent record is still being created
+                        await asyncio.sleep(1)
+                        current_data = supabase.table("agents").select("processed_cities").eq("batch_id", batch_id).execute()
+                        if current_data.data and len(current_data.data) > 0:
+                            current_count = current_data.data[0].get("processed_cities", 0)
+                            supabase.table("agents").update({
+                                "processed_cities": current_count + 1
+                            }).eq("batch_id", batch_id).execute()
+                        else:
+                            logger.warning(f"⚠️ No agent record found for batch_id: {batch_id} (after retry)")
                 except Exception as e:
                     logger.error(f"❌ Error updating processed cities: {e}")
                 
