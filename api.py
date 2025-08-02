@@ -637,25 +637,42 @@ async def search_jobs(request: JobSearchRequest):
                                 url = "https://api.clearout.io/public/companies/autocomplete"
                                 params = {"query": company_name}
                                 
+                                logger.info(f"🌐 Making domain finding call for {company_name}")
                                 async with httpx.AsyncClient() as client:
                                     response = await client.get(url, params=params, timeout=30.0)
                                     
+                                    logger.info(f"🌐 Clearout API response status: {response.status_code}")
+                                    logger.info(f"🌐 Clearout API response text: {response.text}")
+                                    
                                     if response.status_code == 200:
                                         data = response.json()
+                                        logger.info(f"🌐 Clearout API parsed data: {data}")
+                                        
                                         if data.get('status') == 'success' and data.get('data'):
                                             # Get the best match with highest confidence
                                             best_match = None
                                             best_confidence = 0
                                             
+                                            logger.info(f"🌐 Processing {len(data['data'])} companies from Clearout API")
+                                            
                                             for company in data['data']:
                                                 confidence = company.get('confidence_score', 0)
+                                                domain = company.get('domain')
+                                                logger.info(f"🌐 Company: {company.get('name', 'Unknown')}, Domain: {domain}, Confidence: {confidence}")
+                                                
                                                 if confidence > best_confidence and confidence >= 50:
                                                     best_confidence = confidence
-                                                    best_match = company.get('domain')
+                                                    best_match = domain
                                             
                                             if best_match:
                                                 logger.info(f"🌐 Found domain for {company_name}: {best_match}")
                                                 return best_match
+                                            else:
+                                                logger.warning(f"⚠️  No high-confidence domain found for {company_name} (best confidence: {best_confidence})")
+                                        else:
+                                            logger.warning(f"⚠️  Clearout API failed for {company_name}: {data.get('message', 'Unknown error')}")
+                                    else:
+                                        logger.warning(f"⚠️  Clearout API error for {company_name}: {response.status_code}")
                                     
                                     logger.warning(f"⚠️  No domain found for {company_name}")
                                     return None
