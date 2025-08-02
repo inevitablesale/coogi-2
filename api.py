@@ -632,7 +632,7 @@ async def search_jobs(request: JobSearchRequest):
                         import asyncio
                         
                         # Make domain finding call async using httpx
-                        async def find_domain_async(company_name):
+                        # Inline domain finding logic
                             try:
                                 url = "https://api.clearout.io/public/companies/autocomplete"
                                 params = {"query": company_name}
@@ -655,33 +655,33 @@ async def search_jobs(request: JobSearchRequest):
                                             
                                             logger.info(f"🌐 Processing {len(data['data'])} companies from Clearout API")
                                             
-                                            for company in data['data']:
-                                                confidence = company.get('confidence_score', 0)
-                                                domain = company.get('domain')
-                                                logger.info(f"🌐 Company: {company.get('name', 'Unknown')}, Domain: {domain}, Confidence: {confidence}")
+                                            for company_data in data['data']:
+                                                confidence = company_data.get('confidence_score', 0)
+                                                found_domain = company_data.get('domain')
+                                                logger.info(f"🌐 Company: {company_data.get('name', 'Unknown')}, Domain: {found_domain}, Confidence: {confidence}")
                                                 
                                                 if confidence > best_confidence and confidence >= 50:
                                                     best_confidence = confidence
-                                                    best_match = domain
+                                                    best_match = found_domain
                                             
                                             if best_match:
-                                                logger.info(f"🌐 Found domain for {company_name}: {best_match}")
-                                                return best_match
+                                                logger.info(f"🌐 Found domain for {company}: {best_match}")
+                                                domain = best_match
                                             else:
-                                                logger.warning(f"⚠️  No high-confidence domain found for {company_name} (best confidence: {best_confidence})")
+                                                logger.warning(f"⚠️  No high-confidence domain found for {company} (best confidence: {best_confidence})")
                                         else:
-                                            logger.warning(f"⚠️  Clearout API failed for {company_name}: {data.get('message', 'Unknown error')}")
+                                            logger.warning(f"⚠️  Clearout API failed for {company}: {data.get('message', 'Unknown error')}")
                                     else:
-                                        logger.warning(f"⚠️  Clearout API error for {company_name}: {response.status_code}")
+                                        logger.warning(f"⚠️  Clearout API error for {company}: {response.status_code}")
+                                
+                                if not domain:
+                                    logger.warning(f"⚠️  No domain found for {company}")
                                     
-                                    logger.warning(f"⚠️  No domain found for {company_name}")
-                                    return None
-                                    
-                            except Exception as e:
-                                logger.error(f"❌ Domain finding failed for {company_name}: {e}")
-                                return None
+                        except Exception as e:
+                            logger.error(f"❌ Domain finding failed for {company}: {e}")
                         
-                        domain = await find_domain_async(company)
+                        domain = None
+                        logger.info(f"🌐 Domain result for {company}: {domain}")
                         job['company_website'] = domain
                 
                         # STEP 2: LinkedIn Resolution (via OpenAI batch analysis)
