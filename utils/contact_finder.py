@@ -584,68 +584,39 @@ Example format:
     
     def _find_company_domain(self, company_name: str) -> Optional[str]:
         """Find company website domain using Clearout API"""
-        max_retries = 3
-        retry_count = 0
-        
-        while retry_count < max_retries:
-            try:
-                url = "https://api.clearout.io/public/companies/autocomplete"
-                params = {"query": company_name}
-                
-                logger.info(f"🌐 Making domain finding call for {company_name} (attempt {retry_count + 1}/{max_retries})")
-                response = requests.get(url, params=params, timeout=15)  # Increased timeout
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get('status') == 'success' and data.get('data'):
-                        # Get the best match with highest confidence
-                        best_match = None
-                        best_confidence = 0
-                        
-                        for company in data['data']:
-                            confidence = company.get('confidence_score', 0)
-                            if confidence > best_confidence and confidence >= 50:
-                                best_confidence = confidence
-                                best_match = company.get('domain')
-                        
-                        if best_match:
-                            logger.info(f"🌐 Found domain for {company_name}: {best_match}")
-                            return best_match
-                        else:
-                            logger.warning(f"⚠️  No high-confidence domain found for {company_name}")
-                    else:
-                        logger.warning(f"⚠️  Clearout API failed for {company_name}: {data.get('message', 'Unknown error')}")
-                else:
-                    logger.warning(f"⚠️  Clearout API error for {company_name}: {response.status_code}")
-                
-                # If we get here, the call failed or returned no results
-                retry_count += 1
-                if retry_count < max_retries:
-                    logger.info(f"🔄 Retrying Clearout API call for {company_name} in 2 seconds...")
-                    time.sleep(2)  # Wait 2 seconds before retry
-                continue
+        try:
+            url = "https://api.clearout.io/public/companies/autocomplete"
+            params = {"query": company_name}
+            
+            logger.info(f"🌐 Making domain finding call for {company_name}")
+            response = requests.get(url, params=params, timeout=30)  # Increased timeout to 30 seconds
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('status') == 'success' and data.get('data'):
+                    # Get the best match with highest confidence
+                    best_match = None
+                    best_confidence = 0
                     
-            except requests.exceptions.Timeout as e:
-                logger.error(f"❌ Clearout API timeout for {company_name}: {e}")
-                retry_count += 1
-                if retry_count < max_retries:
-                    logger.info(f"🔄 Retrying after timeout... (attempt {retry_count + 1}/{max_retries})")
-                    time.sleep(2)
-                continue
-            except requests.exceptions.ConnectionError as e:
-                logger.error(f"❌ Clearout API connection error for {company_name}: {e}")
-                retry_count += 1
-                if retry_count < max_retries:
-                    logger.info(f"🔄 Retrying after connection error... (attempt {retry_count + 1}/{max_retries})")
-                    time.sleep(2)
-                continue
-            except Exception as e:
-                logger.error(f"❌ Unexpected error in Clearout API call for {company_name}: {e}")
-                retry_count += 1
-                if retry_count < max_retries:
-                    logger.info(f"🔄 Retrying after error... (attempt {retry_count + 1}/{max_retries})")
-                    time.sleep(2)
-                continue
-        
-        logger.warning(f"⚠️  No domain found for {company_name} after {max_retries} attempts")
-        return None 
+                    for company in data['data']:
+                        confidence = company.get('confidence_score', 0)
+                        if confidence > best_confidence and confidence >= 50:
+                            best_confidence = confidence
+                            best_match = company.get('domain')
+                    
+                    if best_match:
+                        logger.info(f"🌐 Found domain for {company_name}: {best_match}")
+                        return best_match
+                    else:
+                        logger.warning(f"⚠️  No domain found for {company_name}")
+                        return None
+                else:
+                    logger.warning(f"⚠️  Clearout API failed for {company_name}: {data.get('message', 'Unknown error')}")
+                    return None
+            else:
+                logger.warning(f"⚠️  Clearout API error for {company_name}: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error finding domain for {company_name}: {e}")
+            return None 
