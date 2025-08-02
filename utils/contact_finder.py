@@ -582,6 +582,28 @@ Example format:
         score = random.uniform(0.5, 1.0)
         return round(score, 2)
     
+    def _extract_domain_from_url(self, url: str) -> Optional[str]:
+        """Extract domain from a URL"""
+        try:
+            if not url:
+                return None
+            
+            # Remove protocol if present
+            if url.startswith(('http://', 'https://')):
+                url = url.split('://', 1)[1]
+            
+            # Remove path and query parameters
+            domain = url.split('/')[0]
+            
+            # Remove www. prefix if present
+            if domain.startswith('www.'):
+                domain = domain[4:]
+            
+            return domain if domain else None
+        except Exception as e:
+            logger.error(f"Error extracting domain from URL {url}: {e}")
+            return None
+    
     def _find_company_domain(self, company_name: str) -> Optional[str]:
         """Find company website domain using Clearout API"""
         try:
