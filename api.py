@@ -631,36 +631,36 @@ async def search_jobs(request: JobSearchRequest):
                     try:
                         # STEP 1: Domain Search
                         import asyncio
-                        import aiohttp
                         
-                        # Make domain finding call async
+                        # Make domain finding call async using httpx
                         async def find_domain_async(company_name):
                             try:
                                 url = "https://api.clearout.io/public/companies/autocomplete"
                                 params = {"query": company_name}
                                 
-                                async with aiohttp.ClientSession() as session:
-                                    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                                        if response.status == 200:
-                                            data = await response.json()
-                                            if data.get('status') == 'success' and data.get('data'):
-                                                # Get the best match with highest confidence
-                                                best_match = None
-                                                best_confidence = 0
-                                                
-                                                for company in data['data']:
-                                                    confidence = company.get('confidence_score', 0)
-                                                    if confidence > best_confidence and confidence >= 50:
-                                                        best_confidence = confidence
-                                                        best_match = company.get('domain')
-                                                
-                                                if best_match:
-                                                    logger.info(f"🌐 Found domain for {company_name}: {best_match}")
-                                                    return best_match
-                                        
-                                        logger.warning(f"⚠️  No domain found for {company_name}")
-                                        return None
-                                        
+                                async with httpx.AsyncClient() as client:
+                                    response = await client.get(url, params=params, timeout=30.0)
+                                    
+                                    if response.status_code == 200:
+                                        data = response.json()
+                                        if data.get('status') == 'success' and data.get('data'):
+                                            # Get the best match with highest confidence
+                                            best_match = None
+                                            best_confidence = 0
+                                            
+                                            for company in data['data']:
+                                                confidence = company.get('confidence_score', 0)
+                                                if confidence > best_confidence and confidence >= 50:
+                                                    best_confidence = confidence
+                                                    best_match = company.get('domain')
+                                            
+                                            if best_match:
+                                                logger.info(f"🌐 Found domain for {company_name}: {best_match}")
+                                                return best_match
+                                    
+                                    logger.warning(f"⚠️  No domain found for {company_name}")
+                                    return None
+                                    
                             except Exception as e:
                                 logger.error(f"❌ Domain finding failed for {company_name}: {e}")
                                 return None
