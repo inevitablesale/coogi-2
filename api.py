@@ -683,6 +683,12 @@ async def search_jobs(request: JobSearchRequest):
                         domain = None
                         logger.info(f"🌐 Domain result for {company}: {domain}")
                         job['company_website'] = domain
+                        
+                        # Log domain status before Hunter.io
+                        if domain:
+                            await log_to_supabase(batch_id, f"✅ Domain found for {company}: {domain}", "success", company, job_title, job_url, "domain_found")
+                        else:
+                            await log_to_supabase(batch_id, f"⚠️ No domain found for {company} - Hunter.io may still work with internal domain finding", "warning", company, job_title, job_url, "domain_not_found")
                 
                         # STEP 2: LinkedIn Resolution (via OpenAI batch analysis)
                         analysis = contact_finder.batch_analyze_companies([company]).get(company, {})
@@ -706,7 +712,13 @@ async def search_jobs(request: JobSearchRequest):
                         # STEP 4: Hunter.io (if no TA team and company found)
                         hunter_emails = []
                         if not has_ta_team and company_found and domain:
-                            await log_to_supabase(batch_id, f"📡 Attempting Hunter.io lookup for: {company}", "info", company, job_title, job_url, "hunter_lookup")
+                            await log_to_supabase(batch_id, f"📡 Attempting Hunter.io lookup for: {company} using domain: {domain}", "info", company, job_title, job_url, "hunter_lookup")
+                        elif not has_ta_team and company_found and not domain:
+                            await log_to_supabase(batch_id, f"📡 Attempting Hunter.io lookup for: {company} (no domain - Hunter.io will use internal domain finding)", "info", company, job_title, job_url, "hunter_lookup_no_domain")
+                        else:
+                            await log_to_supabase(batch_id, f"⏭️ Skipping Hunter.io for {company} (has TA team or company not found)", "info", company, job_title, job_url, "hunter_skipped")
+                            
+                        if not has_ta_team and company_found:
                             try:
                                 hunter_emails = contact_finder.find_hunter_emails_for_target_company(
                                     company=company,
