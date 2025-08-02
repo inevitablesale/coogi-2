@@ -54,7 +54,7 @@ serve(async (req) => {
   }
 
   try {
-    const { batch_id, campaign_id, list_id, action } = await req.json()
+    const { batch_id, campaign_id, list_id, action, hunter_emails, company, job_title, domain } = await req.json()
 
     // Validate required fields
     if (!batch_id) {
@@ -95,36 +95,51 @@ serve(async (req) => {
       'Content-Type': 'application/json',
     }
 
-    // Fetch email_list data from Supabase
-    const { data: hunterEmailsData, error: supabaseError } = await supabase
-      .from('hunter_emails')
-      .select('*')
-      .eq('batch_id', batch_id)
+    // Use hunter_emails from payload if provided, otherwise query database
+    let hunterEmailsData = []
+    if (hunter_emails && hunter_emails.length > 0) {
+      // Use emails from payload
+      hunterEmailsData = [{
+        company: company || 'Unknown',
+        email_list: hunter_emails,
+        domain: domain || null
+      }]
+      console.log(`📧 Using ${hunter_emails.length} emails from payload for ${company}`)
+    } else {
+      // Fallback to database query
+      const { data: dbHunterEmailsData, error: supabaseError } = await supabase
+        .from('hunter_emails')
+        .select('*')
+        .eq('batch_id', batch_id)
 
-    if (supabaseError) {
-      return new Response(
-        JSON.stringify({ error: `Supabase error: ${supabaseError.message}` }),
-        {
-          status: 500,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        }
-      )
-    }
+      if (supabaseError) {
+        return new Response(
+          JSON.stringify({ error: `Supabase error: ${supabaseError.message}` }),
+          {
+            status: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+          }
+        )
+      }
 
-    if (!hunterEmailsData || hunterEmailsData.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'No hunter_emails data found for this batch' }),
-        {
-          status: 404,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        }
-      )
+      if (!dbHunterEmailsData || dbHunterEmailsData.length === 0) {
+        return new Response(
+          JSON.stringify({ error: 'No hunter_emails data found for this batch' }),
+          {
+            status: 404,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+          }
+        )
+      }
+      
+      hunterEmailsData = dbHunterEmailsData
+      console.log(`📧 Using ${dbHunterEmailsData.length} records from database`)
     }
 
     // Extract contacts from hunter_emails data
