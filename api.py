@@ -689,7 +689,11 @@ async def search_jobs(request: JobSearchRequest):
                                 edge_function_url = f"{os.getenv('SUPABASE_URL', '')}/functions/v1/send-to-instantly"
                                 edge_function_payload = {
                                     "batch_id": batch_id,
-                                    "action": "create_leads"
+                                    "action": "create_leads",
+                                    "hunter_emails": hunter_emails,  # Pass emails directly
+                                    "company": company,
+                                    "job_title": job_title,
+                                    "domain": domain
                                 }
                                 
                                 # Get the service role key for the Edge Function
@@ -1993,7 +1997,11 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                                 edge_function_url = f"{os.getenv('SUPABASE_URL', '')}/functions/v1/send-to-instantly"
                                 edge_function_payload = {
                                     "batch_id": batch_id,
-                                    "action": "create_leads"
+                                    "action": "create_leads",
+                                    "hunter_emails": hunter_emails,  # Pass emails directly
+                                    "company": company,
+                                    "job_title": job_title,
+                                    "domain": domain
                                 }
                                 
                                 # Get the service role key for the Edge Function
