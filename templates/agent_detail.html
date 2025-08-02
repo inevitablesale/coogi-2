@@ -786,11 +786,11 @@
                         // Try to extract contact information using various patterns
                         const patterns = [
                             // Pattern: "📝 Created lead for Company: Full Name (Title) - email@company.com"
-                            /📝 Created lead for ([^:]+): ([^(]+) \(([^)]+)\) - [^@]+@[^@]+/i,
+                            /📝 Created lead for ([^:]+): ([^(]+) \(([^)]+)\) - ([^@]+@[^@]+)/i,
                             // Pattern: "📝 Added LinkedIn URL for Full Name: https://..."
                             /📝 Added LinkedIn URL for ([^:]+): https:\/\/www\.linkedin\.com\/in\/[^/]+/i,
                             // Pattern: "✅ Added email: email@company.com (name: John Doe, title: Manager, LinkedIn: ...)"
-                            /✅ Added email: [^)]+ \(name: ([^,]+), title: ([^,]+)/i,
+                            /✅ Added email: ([^)]+) \(name: ([^,]+), title: ([^,]+)/i,
                             // Pattern: "📧 Person details: John Doe, Position: Manager, LinkedIn: ..."
                             /📧 Person details: ([^,]+), Position: ([^,]+)/i,
                             // Pattern: "name: John Doe, title: Manager, company: ABC Corp"
@@ -814,15 +814,23 @@
                                     company = match[1].trim();
                                     fullName = match[2].trim();
                                     title = match[3].trim();
+                                    email = match[4] ? match[4].trim() : '';
                                 } else if (i === 1) {
                                     // Pattern: "📝 Added LinkedIn URL for Full Name: https://..."
                                     // This is just a LinkedIn URL addition, skip it for now
                                     continue;
+                                } else if (i === 2) {
+                                    // Pattern: "✅ Added email: email@company.com (name: John Doe, title: Manager, LinkedIn: ...)"
+                                    email = match[1].trim();
+                                    fullName = match[2].trim();
+                                    title = match[3].trim();
+                                    company = 'Unknown';
                                 } else {
                                     // Other patterns (legacy)
                                     fullName = match[1].trim();
                                     title = match[2].trim();
                                     company = match[3] ? match[3].trim() : 'Unknown';
+                                    email = '';
                                 }
                                 
                                 // Split full name into first and last name
@@ -835,6 +843,7 @@
                                     lastName,
                                     title,
                                     company,
+                                    email,
                                     timestamp: log.timestamp
                                 });
                                 break; // Use first matching pattern
@@ -852,6 +861,7 @@
                                         <th>Last Name</th>
                                         <th>Title</th>
                                         <th>Company</th>
+                                        <th>Email</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -862,6 +872,7 @@
                                             <td>${contact.lastName}</td>
                                             <td>${contact.title}</td>
                                             <td>${contact.company}</td>
+                                            <td>${contact.email || ''}</td>
                                         </tr>
                                     `).join('')}
                                 </tbody>
