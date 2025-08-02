@@ -268,6 +268,8 @@ class ContactFinder:
                     email_info = {
                         "email": email_data,
                         "name": full_name,
+                        "first_name": first_name,
+                        "last_name": last_name,
                         "title": position if position else "Hiring Manager",
                         "confidence": confidence
                     }

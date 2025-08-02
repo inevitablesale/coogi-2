@@ -686,6 +686,8 @@ async def search_jobs(request: JobSearchRequest):
                                         "company": company,
                                         "job_title": job_title,
                                         "name": email_info["name"],
+                                        "first_name": email_info.get("first_name", ""),
+                                        "last_name": email_info.get("last_name", ""),
                                         "title": email_info["title"],
                                         "source": "hunter_io"
                                     }
@@ -1970,6 +1972,8 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                                         "company": company,
                                         "job_title": job_title,
                                         "name": email_info["name"],
+                                        "first_name": email_info.get("first_name", ""),
+                                        "last_name": email_info.get("last_name", ""),
                                         "title": email_info["title"],
                                         "source": "hunter_io"
                                     }
