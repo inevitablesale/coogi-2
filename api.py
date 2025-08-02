@@ -1783,6 +1783,9 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
         campaigns_created = []
         leads_added = 0
         
+        # Initialize tracker for this batch
+        tracker = CompanyProcessingTracker(batch_id)
+        
         # Log start of processing
         await log_to_supabase(batch_id, f"🚀 Starting city-by-city processing for query: {request.query}", "info")
         
