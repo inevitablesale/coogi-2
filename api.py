@@ -633,11 +633,11 @@ async def search_jobs(request: JobSearchRequest):
                         
                         # Make domain finding call async using httpx
                         # Inline domain finding logic
-                            try:
+                        try:
                                 url = "https://api.clearout.io/public/companies/autocomplete"
-                                params = {"query": company_name}
+                                params = {"query": company}
                                 
-                                logger.info(f"🌐 Making domain finding call for {company_name}")
+                                logger.info(f"🌐 Making domain finding call for {company}")
                                 async with httpx.AsyncClient() as client:
                                     response = await client.get(url, params=params, timeout=30.0)
                                     
