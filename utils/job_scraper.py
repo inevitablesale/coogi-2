@@ -293,43 +293,76 @@ class JobScraper:
             
     def _find_company_domain(self, company_name: str, tracker=None) -> Optional[str]:
         """Find company website domain using Clearout API"""
-        try:
-            url = "https://api.clearout.io/public/companies/autocomplete"
-            params = {"query": company_name}
-            
-            # Make direct domain finding call (no proxies needed)
-            logger.info(f"🌐 Making domain finding call for {company_name}")
-            response = requests.get(url, params=params, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('status') == 'success' and data.get('data'):
-                    # Get the best match with highest confidence
-                    best_match = None
-                    best_confidence = 0
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                url = "https://api.clearout.io/public/companies/autocomplete"
+                params = {"query": company_name}
+                
+                # Make direct domain finding call (no proxies needed)
+                logger.info(f"🌐 Making domain finding call for {company_name} (attempt {retry_count + 1}/{max_retries})")
+                response = requests.get(url, params=params, timeout=15)  # Increased timeout
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('status') == 'success' and data.get('data'):
+                        # Get the best match with highest confidence
+                        best_match = None
+                        best_confidence = 0
+                        
+                        for company in data['data']:
+                            confidence = company.get('confidence_score', 0)
+                            if confidence > best_confidence and confidence >= 50:
+                                best_confidence = confidence
+                                best_match = company.get('domain')
+                        
+                        if best_match:
+                            logger.info(f"🌐 Found domain for {company_name}: {best_match}")
+                            if tracker:
+                                tracker.save_domain_search(company_name, best_match)
+                            return best_match
+                        else:
+                            logger.warning(f"⚠️  No high-confidence domain found for {company_name}")
+                    else:
+                        logger.warning(f"⚠️  Clearout API failed for {company_name}: {data.get('message', 'Unknown error')}")
+                else:
+                    logger.warning(f"⚠️  Clearout API error for {company_name}: {response.status_code}")
+                
+                # If we get here, the call failed or returned no results
+                retry_count += 1
+                if retry_count < max_retries:
+                    logger.info(f"🔄 Retrying Clearout API call for {company_name} in 2 seconds...")
+                    time.sleep(2)  # Wait 2 seconds before retry
+                continue
                     
-                    for company in data['data']:
-                        confidence = company.get('confidence_score', 0)
-                        if confidence > best_confidence and confidence >= 50:
-                            best_confidence = confidence
-                            best_match = company.get('domain')
-                    
-                    if best_match:
-                        logger.info(f"🌐 Found domain for {company_name}: {best_match}")
-                        if tracker:
-                            tracker.save_domain_search(company_name, best_match)
-                        return best_match
-            
-            logger.warning(f"⚠️  No domain found for {company_name}")
-            if tracker:
-                tracker.save_domain_search(company_name, error="No domain found")
-            return None
-            
-        except Exception as e:
-            logger.error(f"❌ Domain finding failed for {company_name}: {e}")
-            if tracker:
-                tracker.save_domain_search(company_name, error=str(e))
-            return None
+            except requests.exceptions.Timeout as e:
+                logger.error(f"❌ Clearout API timeout for {company_name}: {e}")
+                retry_count += 1
+                if retry_count < max_retries:
+                    logger.info(f"🔄 Retrying after timeout... (attempt {retry_count + 1}/{max_retries})")
+                    time.sleep(2)
+                continue
+            except requests.exceptions.ConnectionError as e:
+                logger.error(f"❌ Clearout API connection error for {company_name}: {e}")
+                retry_count += 1
+                if retry_count < max_retries:
+                    logger.info(f"🔄 Retrying after connection error... (attempt {retry_count + 1}/{max_retries})")
+                    time.sleep(2)
+                continue
+            except Exception as e:
+                logger.error(f"❌ Unexpected error in Clearout API call for {company_name}: {e}")
+                retry_count += 1
+                if retry_count < max_retries:
+                    logger.info(f"🔄 Retrying after error... (attempt {retry_count + 1}/{max_retries})")
+                    time.sleep(2)
+                continue
+        
+        logger.warning(f"⚠️  No domain found for {company_name} after {max_retries} attempts")
+        if tracker:
+            tracker.save_domain_search(company_name, error="No domain found after retries")
+        return None
         
     def extract_keywords(self, job_description: str) -> List[str]:
         """Extract keywords from job description"""
