@@ -687,13 +687,22 @@ async def search_jobs(request: JobSearchRequest):
                                 
                                 # Prepare the request for the Edge Function
                                 edge_function_url = f"{os.getenv('SUPABASE_URL', '')}/functions/v1/send-to-instantly"
+                                
+                                # Extract domain from Hunter.io emails
+                                hunter_domain = None
+                                if hunter_emails and len(hunter_emails) > 0:
+                                    # Get domain from first email
+                                    first_email = hunter_emails[0].get("email", "")
+                                    if "@" in first_email:
+                                        hunter_domain = first_email.split("@")[1]
+                                
                                 edge_function_payload = {
                                     "batch_id": batch_id,
                                     "action": "create_leads",
                                     "hunter_emails": hunter_emails,  # Pass emails directly
                                     "company": company,
                                     "job_title": job_title,
-                                    "domain": domain
+                                    "domain": hunter_domain  # Use domain from Hunter.io emails
                                 }
                                 
                                 # Get the service role key for the Edge Function
@@ -1995,13 +2004,22 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                                 
                                 # Prepare the request for the Edge Function
                                 edge_function_url = f"{os.getenv('SUPABASE_URL', '')}/functions/v1/send-to-instantly"
+                                
+                                # Extract domain from Hunter.io emails
+                                hunter_domain = None
+                                if hunter_emails and len(hunter_emails) > 0:
+                                    # Get domain from first email
+                                    first_email = hunter_emails[0].get("email", "")
+                                    if "@" in first_email:
+                                        hunter_domain = first_email.split("@")[1]
+                                
                                 edge_function_payload = {
                                     "batch_id": batch_id,
                                     "action": "create_leads",
                                     "hunter_emails": hunter_emails,  # Pass emails directly
                                     "company": company,
                                     "job_title": job_title,
-                                    "domain": domain
+                                    "domain": hunter_domain  # Use domain from Hunter.io emails
                                 }
                                 
                                 # Get the service role key for the Edge Function
