@@ -308,6 +308,32 @@
         .data-table tr:hover {
             background: rgba(255, 0, 255, 0.1);
         }
+        
+        .action-button {
+            background: linear-gradient(135deg, #ff00ff 0%, #00ffff 100%);
+            color: #000000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            box-shadow: 0 4px 15px rgba(255, 0, 255, 0.4);
+        }
+        
+        .action-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 0, 255, 0.6);
+        }
+        
+        .action-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
 
         .loading {
             text-align: center;
@@ -797,9 +823,15 @@
                     
                     if (contacts.length > 0) {
                         container.innerHTML = `
+                            <div style="margin-bottom: 15px;">
+                                <button id="addToInstantlyBtn" class="action-button" style="display: none;" onclick="addSelectedContactsToInstantly()">
+                                    🚀 Add Selected to Instantly
+                                </button>
+                            </div>
                             <table class="data-table">
                                 <thead>
                                     <tr>
+                                        <th><input type="checkbox" id="selectAllContacts" onchange="toggleAllContacts(this)"></th>
                                         <th>Time</th>
                                         <th>First Name</th>
                                         <th>Last Name</th>
@@ -809,8 +841,9 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    ${contacts.map(contact => `
+                                    ${contacts.map((contact, index) => `
                                         <tr>
+                                            <td><input type="checkbox" class="contact-checkbox" data-index="${index}" onchange="updateAddButton()"></td>
                                             <td>${new Date(contact.timestamp).toLocaleString()}</td>
                                             <td>${contact.firstName}</td>
                                             <td>${contact.lastName}</td>
@@ -822,6 +855,9 @@
                                 </tbody>
                             </table>
                         `;
+                        
+                        // Store contacts globally for access by other functions
+                        window.agentContacts = contacts;
                     } else if (contactLogs.length > 0) {
                         // Fallback: show all contact-related logs
                         container.innerHTML = `
@@ -893,6 +929,95 @@
             }
         }
 
+        // Contact selection and Instantly integration functions
+        function toggleAllContacts(checkbox) {
+            const contactCheckboxes = document.querySelectorAll('.contact-checkbox');
+            contactCheckboxes.forEach(cb => {
+                cb.checked = checkbox.checked;
+            });
+            updateAddButton();
+        }
+        
+        function updateAddButton() {
+            const selectedCheckboxes = document.querySelectorAll('.contact-checkbox:checked');
+            const addButton = document.getElementById('addToInstantlyBtn');
+            
+            if (selectedCheckboxes.length > 0) {
+                addButton.style.display = 'inline-block';
+                addButton.textContent = `🚀 Add ${selectedCheckboxes.length} Contact${selectedCheckboxes.length > 1 ? 's' : ''} to Instantly`;
+            } else {
+                addButton.style.display = 'none';
+            }
+        }
+        
+        async function addSelectedContactsToInstantly() {
+            const selectedCheckboxes = document.querySelectorAll('.contact-checkbox:checked');
+            if (selectedCheckboxes.length === 0) {
+                alert('Please select at least one contact to add to Instantly.');
+                return;
+            }
+            
+            const selectedContacts = [];
+            selectedCheckboxes.forEach(checkbox => {
+                const index = parseInt(checkbox.getAttribute('data-index'));
+                const contact = window.agentContacts[index];
+                if (contact && contact.email) {
+                    selectedContacts.push({
+                        email: contact.email,
+                        first_name: contact.firstName,
+                        last_name: contact.lastName,
+                        company_name: contact.company,
+                        title: contact.title
+                    });
+                }
+            });
+            
+            if (selectedContacts.length === 0) {
+                alert('No valid contacts with email addresses selected.');
+                return;
+            }
+            
+            try {
+                const addButton = document.getElementById('addToInstantlyBtn');
+                addButton.disabled = true;
+                addButton.textContent = '🔄 Adding to Instantly...';
+                
+                // Call the edge function to add contacts to Instantly
+                const response = await fetch(`${EDGE_FUNCTIONS_BASE}/send-to-instantly`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${await getAuthToken()}`
+                    },
+                    body: JSON.stringify({
+                        contacts: selectedContacts,
+                        action: 'create_leads'
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(`✅ Successfully added ${selectedContacts.length} contact${selectedContacts.length > 1 ? 's' : ''} to Instantly!`);
+                    
+                    // Uncheck all checkboxes
+                    selectedCheckboxes.forEach(cb => cb.checked = false);
+                    document.getElementById('selectAllContacts').checked = false;
+                    updateAddButton();
+                } else {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
+            } catch (error) {
+                console.error('Error adding contacts to Instantly:', error);
+                alert(`❌ Error adding contacts to Instantly: ${error.message}`);
+            } finally {
+                const addButton = document.getElementById('addToInstantlyBtn');
+                addButton.disabled = false;
+                updateAddButton();
+            }
+        }
+        
         // Initialize page when DOM is loaded
         document.addEventListener('DOMContentLoaded', initializePage);
     </script>
