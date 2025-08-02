@@ -1876,6 +1876,7 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                     company = company_data['company']
                     job = company_data['job']
                     job_title = job.get('title', '')
+                    job_url = job.get('job_url', '')
                     
                     # Check if company has already been analyzed in previous batches
                     try:
@@ -1943,11 +1944,14 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                                 
                                 if hunter_emails:
                                     await log_to_supabase(batch_id, f"✅ Step 3b: Found {len(hunter_emails)} Hunter.io emails for {company}", "success", company)
+                                    tracker.save_hunter_emails(company, job_title, job_url, hunter_emails)
                                 else:
                                     await log_to_supabase(batch_id, f"⚠️ Step 3b: No Hunter.io emails found for {company}", "warning", company)
+                                    tracker.save_hunter_emails(company, job_title, job_url, [])
                                     
                             except Exception as e:
                                 await log_to_supabase(batch_id, f"❌ Step 3b: Hunter.io error for {company}: {str(e)}", "error", company)
+                                tracker.save_hunter_emails(company, job_title, job_url, [], error=str(e))
                         else:
                             await log_to_supabase(batch_id, f"⏭️ Step 3b: Skipping Hunter.io for {company} (has TA team or company not found)", "info", company)
                         
