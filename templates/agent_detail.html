@@ -510,12 +510,7 @@
             </div>
         </div>
 
-        <div class="section">
-            <div class="section-title">Emails Found</div>
-            <div id="emailsContainer">
-                <div class="loading">Loading emails...</div>
-            </div>
-        </div>
+
 
         <div class="section">
             <div class="section-title">Campaigns Created</div>
@@ -605,58 +600,7 @@
             }
         }
 
-        async function loadEmails() {
-            try {
-                const response = await fetch(`${RAILWAY_API}/logs/${batchId}`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                // Only show logs that contain actual email addresses (with @ symbol)
-                const emails = data.logs?.filter(log => {
-                    if (!log.message) return false;
-                    // Check if the message contains an email address pattern
-                    const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-                    return emailPattern.test(log.message);
-                }) || [];
-                
-                const container = document.getElementById('emailsContainer');
-                if (emails.length > 0) {
-                    container.innerHTML = `
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Time</th>
-                                    <th>Email Found</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${emails.map(log => {
-                                    // Extract the email address from the message
-                                    const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-                                    const emails = log.message.match(emailPattern) || [];
-                                    const emailList = emails.join(', ');
-                                    
-                                    return `
-                                        <tr>
-                                            <td>${new Date(log.timestamp).toLocaleString()}</td>
-                                            <td>${emailList}</td>
-                                        </tr>
-                                    `;
-                                }).join('')}
-                            </tbody>
-                        </table>
-                    `;
-                } else {
-                    container.innerHTML = '<div class="loading">No emails found</div>';
-                }
-                
-            } catch (error) {
-                console.error('Error loading emails:', error);
-                document.getElementById('emailsContainer').innerHTML = '<div class="error">Error loading emails</div>';
-            }
-        }
+
 
         async function loadCampaigns() {
             try {
@@ -941,7 +885,6 @@
                 await Promise.all([
                     loadAgentInfo(),
                     loadLogs(),
-                    loadEmails(),
                     loadCampaigns(),
                     loadContacts()
                 ]);
