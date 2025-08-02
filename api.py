@@ -2006,8 +2006,43 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                     # Step 2b: Domain finding
                     await log_to_supabase(batch_id, f"🌐 Step 2b: Finding domain for {company}", "info", company)
                     company_website = job.get('company_website')
+                    
+                    # If no website in job data, try to find domain using Clearout API
+                    if not company_website:
+                        try:
+                            url = "https://api.clearout.io/public/companies/autocomplete"
+                            params = {"query": company}
+                            
+                            async with httpx.AsyncClient() as client:
+                                response = await client.get(url, params=params, timeout=30.0)
+                                
+                                if response.status_code == 200:
+                                    data = response.json()
+                                    if data.get('status') == 'success' and data.get('data'):
+                                        # Get the best match with highest confidence
+                                        best_match = None
+                                        best_confidence = 0
+                                        
+                                        for company_data in data['data']:
+                                            confidence = company_data.get('confidence_score', 0)
+                                            if confidence > best_confidence and confidence >= 50:
+                                                best_confidence = confidence
+                                                best_match = company_data.get('domain')
+                                        
+                                        if best_match:
+                                            company_website = best_match
+                                            await log_to_supabase(batch_id, f"✅ Step 2b: Found domain via Clearout API: {company_website}", "success", company)
+                                        else:
+                                            await log_to_supabase(batch_id, f"⚠️ Step 2b: No high-confidence domain found for {company} (best confidence: {best_confidence})", "warning", company)
+                                    else:
+                                        await log_to_supabase(batch_id, f"⚠️ Step 2b: Clearout API failed for {company}: {data.get('message', 'Unknown error')}", "warning", company)
+                                else:
+                                    await log_to_supabase(batch_id, f"⚠️ Step 2b: Clearout API error for {company}: {response.status_code}", "warning", company)
+                        except Exception as e:
+                            await log_to_supabase(batch_id, f"❌ Step 2b: Domain finding failed for {company}: {str(e)}", "error", company)
+                    
                     if company_website:
-                        await log_to_supabase(batch_id, f"✅ Step 2b: Found website: {company_website}", "success", company)
+                        await log_to_supabase(batch_id, f"✅ Step 2b: Using website: {company_website}", "success", company)
                     else:
                         await log_to_supabase(batch_id, f"⚠️ Step 2b: No website found for {company}", "warning", company)
                     
