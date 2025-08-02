@@ -666,6 +666,9 @@ async def search_jobs(request: JobSearchRequest):
                                 if hunter_emails:
                                     await log_to_supabase(batch_id, f"✅ Found {len(hunter_emails)} Hunter.io emails for {company}", "success", company, job_title, job_url, "hunter_success")
                                     tracker.save_hunter_emails(company, job_title, job_url, hunter_emails)
+                                    # Add a small delay to ensure database write completes
+                                    await asyncio.sleep(1)
+                                    await log_to_supabase(batch_id, f"💾 Saved {len(hunter_emails)} emails to database for {company}", "info", company, job_title, job_url, "database_save")
                                 else:
                                     await log_to_supabase(batch_id, f"⚠️ No Hunter.io emails found for {company}", "warning", company, job_title, job_url, "hunter_no_emails")
                                     tracker.save_hunter_emails(company, job_title, job_url, [])
