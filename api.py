@@ -2170,10 +2170,19 @@ async def get_batch_results(batch_id: str):
             except Exception:
                 logs = []
             
+            # Get hunter_emails for this batch
+            try:
+                hunter_emails_response = supabase.table("hunter_emails").select("*").eq("batch_id", batch_id).order("timestamp", desc=True).execute()
+                hunter_emails = hunter_emails_response.data
+            except Exception:
+                hunter_emails = []
+            
             return {
                 "agent": agent,
                 "logs": logs,
+                "hunter_emails": hunter_emails,
                 "total_logs": len(logs),
+                "total_hunter_emails": len(hunter_emails),
                 "batch_id": batch_id,
                 "status": agent.get("status", "unknown"),
                 "query": agent.get("query", ""),
