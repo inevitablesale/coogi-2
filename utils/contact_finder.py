@@ -221,8 +221,10 @@ class ContactFinder:
             search_url = "https://api.hunter.io/v2/domain-search"
             params = {
                 "domain": domain,
-                "api_key": self.hunter_api_key,
-                "limit": 10  # Increased limit to get more emails
+                "company": company,
+                "type": "personal",  # Only get personal emails, filter out generic ones
+                "limit": 10,
+                "api_key": self.hunter_api_key
             }
             
             response = requests.get(search_url, params=params, timeout=15)
@@ -236,10 +238,10 @@ class ContactFinder:
             logger.info(f"📧 Hunter.io raw response: {data}")
             emails = data.get("data", {}).get("emails", [])
             
-            logger.info(f"📧 Found {len(emails)} emails from Hunter.io")
+            logger.info(f"📧 Found {len(emails)} personal emails from Hunter.io")
             
-            # Step 3: Filter and score emails
-            logger.info(f"🎯 Step 3: Filtering and scoring emails for {company}")
+            # Step 3: Process emails (no need to filter generics since type=personal)
+            logger.info(f"🎯 Step 3: Processing personal emails for {company}")
             
             filtered_emails = []
             for i, email in enumerate(emails):
@@ -258,39 +260,15 @@ class ContactFinder:
                 logger.info(f"📧 Email {i}: {email_data}, Confidence: {confidence}, Sources: {len(sources)}")
                 logger.info(f"📧 Person details: {first_name} {last_name}, Position: {position}, LinkedIn: {linkedin_url}")
                 
-                # Filter for high-confidence emails AND personal emails (not generic)
+                # Filter for high-confidence emails (no need to filter generics since type=personal)
                 if confidence > 50 and email_data:
-                    # Check if this is a personal email (not generic)
-                    email_lower = email_data.lower()
-                    username = email_lower.split('@')[0] if '@' in email_lower else ""
-                    
-                    # List of generic email prefixes to filter out
-                    generic_prefixes = [
-                        "info", "hello", "contact", "support", "help", "admin", "webmaster", 
-                        "postmaster", "abuse", "security", "noreply", "no-reply", "donotreply",
-                        "mail", "email", "sales", "marketing", "press", "media", "pr", "hr",
-                        "jobs", "careers", "recruiting", "talent", "hiring", "apply", "applications",
-                        "feedback", "suggestions", "complaints", "billing", "accounts", "finance",
-                        "legal", "compliance", "privacy", "terms", "service", "customer", "client",
-                        "general", "main", "office", "reception", "frontdesk", "receptionist",
-                        "team", "group", "department", "division", "unit", "section", "branch",
-                        "subsidiary", "corporate", "headquarters", "main", "primary", "secondary",
-                        "backup", "emergency", "urgent", "immediate", "priority", "vip", "executive",
-                        "management", "leadership", "board", "directors", "officers", "partners",
-                        "toinfo", "to", "from", "reply", "forward", "cc", "bcc"
-                    ]
-                    
-                    # Check if username contains any generic prefixes
-                    is_generic = any(prefix in username for prefix in generic_prefixes)
-                    
-                    if is_generic:
-                        logger.info(f"❌ Skipped generic email: {email_data} (username: {username})")
-                        continue
-                    
                     # Create full name - try to extract from email if Hunter.io doesn't provide it
                     full_name = f"{first_name} {last_name}".strip()
                     if not full_name or full_name == "None None" or full_name == "":
                         # Try to extract name from email address
+                        email_lower = email_data.lower()
+                        username = email_lower.split('@')[0] if '@' in email_lower else ""
+                        
                         if '.' in username and len(username) > 3:
                             # Common pattern: firstname.lastname@domain.com
                             name_parts = username.replace('_', ' ').replace('.', ' ').replace('-', ' ')
@@ -322,7 +300,7 @@ class ContactFinder:
                 else:
                     logger.info(f"❌ Skipped email: {email_data} (confidence: {confidence})")
             
-            logger.info(f"✅ Step 3 Complete: Filtered to {len(filtered_emails)} personal emails")
+            logger.info(f"✅ Step 3 Complete: Processed {len(filtered_emails)} personal emails")
             
             return filtered_emails
             
