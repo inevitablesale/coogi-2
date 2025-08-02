@@ -669,6 +669,114 @@
             font-family: 'Courier New', monospace;
         }
 
+        /* Campaign Selector Modal */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: linear-gradient(135deg, rgba(255, 0, 255, 0.2) 0%, rgba(0, 255, 255, 0.2) 100%);
+            border: 3px solid;
+            border-image: linear-gradient(45deg, #ff00ff, #00ffff, #ff00ff) 1;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 
+                0 20px 40px rgba(0, 0, 0, 0.5),
+                0 0 0 1px rgba(255, 0, 255, 0.3),
+                0 0 30px rgba(255, 0, 255, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid rgba(255, 0, 255, 0.3);
+        }
+
+        .modal-header h3 {
+            background: linear-gradient(135deg, #ff00ff 0%, #00ffff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 20px rgba(255, 0, 255, 0.8);
+            font-family: 'Courier New', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .close {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .close:hover {
+            color: #ff00ff;
+            text-shadow: 0 0 10px rgba(255, 0, 255, 0.8);
+        }
+
+        .campaign-selector {
+            display: grid;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .campaign-option {
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid rgba(255, 0, 255, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .campaign-option:hover {
+            border-color: rgba(255, 0, 255, 0.8);
+            background: rgba(255, 0, 255, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 0, 255, 0.3);
+        }
+
+        .campaign-name {
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 8px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .campaign-stats {
+            display: flex;
+            gap: 15px;
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .campaign-stats span {
+            background: rgba(255, 0, 255, 0.2);
+            padding: 4px 8px;
+            border-radius: 5px;
+            border: 1px solid rgba(255, 0, 255, 0.3);
+        }
+
         /* Active Agents */
         .active-agents {
             background: rgba(255, 255, 255, 0.95);
@@ -1670,7 +1778,12 @@
                             <div class="agent-title">Agent: ${agent.query}</div>
                             <div class="agent-status">
                                 <div class="status-indicator status-${agent.status}"></div>
-                                <button onclick="event.stopPropagation(); cancelAgent('${batchId}')" class="btn btn-danger">🚫 Kill</button>
+                                ${agent.status === 'completed' ? `
+                                    <button onclick="event.stopPropagation(); showInstantlyCampaignSelector('${batchId}')" class="btn btn-secondary">🚀 Send to Instantly</button>
+                                ` : ''}
+                                ${agent.status === 'processing' ? `
+                                    <button onclick="event.stopPropagation(); cancelAgent('${batchId}')" class="btn btn-danger">🚫 Kill</button>
+                                ` : ''}
                                 <button onclick="event.stopPropagation(); deleteAgent('${batchId}')" class="btn btn-danger" style="margin-left: 5px;">🗑️ Delete</button>
                             </div>
                         </div>
@@ -2004,6 +2117,181 @@
                 loadCampaigns(),
                 loadInstantlyStats()
             ]);
+        }
+
+        // Send contacts to Instantly.ai campaign
+        async function sendContactsToInstantly(contacts, campaign_id, list_id, action = 'create_leads') {
+            try {
+                showToast('Sending contacts to Instantly.ai...', 'info');
+                
+                const response = await fetch(`${SUPABASE_URL}/functions/v1/send-to-instantly`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    },
+                    body: JSON.stringify({
+                        contacts,
+                        campaign_id,
+                        list_id,
+                        action
+                    })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        const summary = result.summary;
+                        showToast(
+                            `✅ Successfully processed ${summary.created || summary.moved} contacts. ${summary.failed} failed.`,
+                            'success'
+                        );
+                        
+                        // Refresh Instantly data
+                        await loadInstantlyData();
+                        
+                        return result;
+                    } else {
+                        showToast(`❌ Failed to send contacts: ${result.error}`, 'error');
+                        return result;
+                    }
+                } else {
+                    const error = await response.json();
+                    showToast(`❌ Error: ${error.error || 'Unknown error'}`, 'error');
+                    return { success: false, error: error.error };
+                }
+            } catch (error) {
+                console.error('Error sending contacts to Instantly:', error);
+                showToast(`❌ Error: ${error.message}`, 'error');
+                return { success: false, error: error.message };
+            }
+        }
+
+        // Send contacts from agent results to Instantly
+        async function sendAgentContactsToInstantly(batchId, campaign_id) {
+            try {
+                // Get agent contacts from logs
+                const response = await fetch(`${RAILWAY_API}/batch/${batchId}`);
+                if (!response.ok) {
+                    showToast('❌ Failed to get agent data', 'error');
+                    return;
+                }
+
+                const agentData = await response.json();
+                
+                // Extract contacts from logs
+                const contacts = extractContactsFromLogs(agentData.logs || []);
+                
+                if (contacts.length === 0) {
+                    showToast('❌ No contacts found in agent results', 'warning');
+                    return;
+                }
+
+                // Send to Instantly
+                const result = await sendContactsToInstantly(contacts, campaign_id, null, 'create_leads');
+                
+                if (result.success) {
+                    showToast(`✅ Sent ${contacts.length} contacts to Instantly campaign`, 'success');
+                }
+                
+            } catch (error) {
+                console.error('Error sending agent contacts to Instantly:', error);
+                showToast(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Extract contacts from agent logs
+        function extractContactsFromLogs(logs) {
+            const contacts = [];
+            const contactRegex = /📝 Created lead for (.+): (.+) \((.+)\) - (.+@.+)/;
+            
+            for (const log of logs) {
+                const match = log.message.match(contactRegex);
+                if (match) {
+                    const [, company, name, title, email] = match;
+                    const [firstName, lastName] = name.split(' ').filter(n => n);
+                    
+                    contacts.push({
+                        email,
+                        first_name: firstName || '',
+                        last_name: lastName || '',
+                        company_name: company,
+                        title: title,
+                        personalization: `Hi ${firstName || name}, I noticed you're ${title} at ${company}...`
+                    });
+                }
+            }
+            
+            return contacts;
+        }
+
+        // Show campaign selector modal for sending contacts to Instantly
+        async function showInstantlyCampaignSelector(batchId) {
+            try {
+                // Load available campaigns
+                const response = await fetch(`${RAILWAY_API}/instantly-campaigns`);
+                if (!response.ok) {
+                    showToast('❌ Failed to load campaigns', 'error');
+                    return;
+                }
+
+                const campaigns = await response.json();
+                
+                if (!campaigns || campaigns.length === 0) {
+                    showToast('❌ No campaigns found. Create a campaign first.', 'warning');
+                    return;
+                }
+
+                // Create modal
+                const modal = document.createElement('div');
+                modal.className = 'modal';
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>🚀 Send Contacts to Instantly Campaign</h3>
+                            <span class="close" onclick="this.parentElement.parentElement.parentElement.remove()">&times;</span>
+                        </div>
+                        <div class="modal-body">
+                            <p>Select a campaign to send the contacts from agent <strong>${batchId}</strong>:</p>
+                            <div class="campaign-selector">
+                                ${campaigns.map(campaign => `
+                                    <div class="campaign-option" onclick="selectCampaignAndSend('${batchId}', '${campaign.id}', '${campaign.name}')">
+                                        <div class="campaign-name">${campaign.name}</div>
+                                        <div class="campaign-stats">
+                                            <span>${campaign.leads_count || 0} leads</span>
+                                            <span>${campaign.status}</span>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                document.body.appendChild(modal);
+                
+            } catch (error) {
+                console.error('Error showing campaign selector:', error);
+                showToast(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Select campaign and send contacts
+        async function selectCampaignAndSend(batchId, campaignId, campaignName) {
+            try {
+                // Remove modal
+                document.querySelector('.modal').remove();
+                
+                showToast(`🚀 Sending contacts to campaign: ${campaignName}`, 'info');
+                
+                // Send contacts to Instantly
+                await sendAgentContactsToInstantly(batchId, campaignId);
+                
+            } catch (error) {
+                console.error('Error sending to campaign:', error);
+                showToast(`❌ Error: ${error.message}`, 'error');
+            }
         }
 
         // Load campaigns
