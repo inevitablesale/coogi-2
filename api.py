@@ -1340,7 +1340,8 @@ async def create_instantly_campaign(request: InstantlyCampaignRequest):
                             company=company,
                             job_title=job.get('title', ''),
                             employee_roles=employee_roles,
-                            company_website=job.get('company_website')
+                            company_website=job.get('company_website'),
+                            rapidapi_contacts=contacts  # Pass RapidAPI contacts for better results
                         )
                         # Log success only if emails were actually found
                         if hunter_emails:

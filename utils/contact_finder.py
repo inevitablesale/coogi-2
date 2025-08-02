@@ -222,7 +222,7 @@ class ContactFinder:
             params = {
                 "domain": domain,
                 "api_key": self.hunter_api_key,
-                "limit": 3
+                "limit": 10  # Increased limit to get more emails
             }
             
             response = requests.get(search_url, params=params, timeout=15)
@@ -289,7 +289,7 @@ class ContactFinder:
                     
                     # Create full name - try to extract from email if Hunter.io doesn't provide it
                     full_name = f"{first_name} {last_name}".strip()
-                    if not full_name or full_name == "None None":
+                    if not full_name or full_name == "None None" or full_name == "":
                         # Try to extract name from email address
                         if '.' in username and len(username) > 3:
                             # Common pattern: firstname.lastname@domain.com
