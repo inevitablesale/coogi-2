@@ -2013,6 +2013,7 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                             url = "https://api.clearout.io/public/companies/autocomplete"
                             params = {"query": company}
                             
+                            import httpx
                             async with httpx.AsyncClient() as client:
                                 response = await client.get(url, params=params, timeout=30.0)
                                 
