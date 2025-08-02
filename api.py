@@ -2183,9 +2183,14 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                         
                         # Update processed companies count
                         try:
-                            supabase.table("agents").update({
-                                "processed_companies": supabase.table("agents").select("processed_companies").eq("batch_id", batch_id).execute().data[0]["processed_companies"] + 1
-                            }).eq("batch_id", batch_id).execute()
+                            current_data = supabase.table("agents").select("processed_companies").eq("batch_id", batch_id).execute()
+                            if current_data.data and len(current_data.data) > 0:
+                                current_count = current_data.data[0].get("processed_companies", 0)
+                                supabase.table("agents").update({
+                                    "processed_companies": current_count + 1
+                                }).eq("batch_id", batch_id).execute()
+                            else:
+                                logger.warning(f"⚠️ No agent record found for batch_id: {batch_id}")
                         except Exception as e:
                             logger.error(f"❌ Error updating processed companies: {e}")
                         
@@ -2203,9 +2208,14 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                 
                 # Update processed cities count
                 try:
-                    supabase.table("agents").update({
-                        "processed_cities": supabase.table("agents").select("processed_cities").eq("batch_id", batch_id).execute().data[0]["processed_cities"] + 1
-                    }).eq("batch_id", batch_id).execute()
+                    current_data = supabase.table("agents").select("processed_cities").eq("batch_id", batch_id).execute()
+                    if current_data.data and len(current_data.data) > 0:
+                        current_count = current_data.data[0].get("processed_cities", 0)
+                        supabase.table("agents").update({
+                            "processed_cities": current_count + 1
+                        }).eq("batch_id", batch_id).execute()
+                    else:
+                        logger.warning(f"⚠️ No agent record found for batch_id: {batch_id}")
                 except Exception as e:
                     logger.error(f"❌ Error updating processed cities: {e}")
                 
