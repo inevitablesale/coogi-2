@@ -127,29 +127,60 @@ serve(async (req) => {
       )
     }
 
-    // Extract contacts from email_list data
+    // Extract contacts from hunter_emails data
     const contacts: Contact[] = []
+    
     for (const record of hunterEmailsData) {
       const emailList = record.email_list || []
+      
       for (const contact of emailList) {
-        // Extract website from email domain
-        let website = ""
-        if (contact.email) {
-          const emailDomain = contact.email.split('@')[1]
-          if (emailDomain) {
-            website = `https://${emailDomain}`
+        // Extract or generate first and last names
+        let firstName = contact.first_name || ''
+        let lastName = contact.last_name || ''
+        
+        // If names are null/empty, try to extract from full name
+        if (!firstName && !lastName && contact.name) {
+          const nameParts = contact.name.split(' ')
+          if (nameParts.length >= 2) {
+            firstName = nameParts[0]
+            lastName = nameParts.slice(1).join(' ')
+          } else if (nameParts.length === 1) {
+            firstName = nameParts[0]
           }
         }
         
+        // If still no names, try to extract from email
+        if (!firstName && !lastName && contact.email) {
+          const emailParts = contact.email.split('@')[0].split('.')
+          if (emailParts.length >= 2) {
+            firstName = emailParts[0].charAt(0).toUpperCase() + emailParts[0].slice(1)
+            lastName = emailParts[1].charAt(0).toUpperCase() + emailParts[1].slice(1)
+          } else {
+            firstName = emailParts[0].charAt(0).toUpperCase() + emailParts[0].slice(1)
+          }
+        }
+        
+        // Final fallback: use "Unknown" names
+        if (!firstName) firstName = 'Unknown'
+        if (!lastName) lastName = 'Contact'
+        
+        // Generate website from email domain
+        const website = contact.email ? `https://${contact.email.split('@')[1]}` : ''
+        
         contacts.push({
-          email: contact.email,
-          first_name: contact.first_name,
-          last_name: contact.last_name,
-          company_name: contact.company,
+          email: contact.email || '',
+          first_name: firstName,
+          last_name: lastName,
+          company_name: contact.company || record.company || '',
           website: website,
-          title: contact.title,
-          linkedin_url: contact.linkedin_url,
-          tags: [`company:${contact.company}`, `source:hunter_io`, `coogi_generated`]
+          title: contact.title || 'Hiring Manager',
+          linkedin_url: contact.linkedin_url || '',
+          confidence: contact.confidence || 0,
+          tags: [
+            `company:${contact.company || record.company || 'unknown'}`,
+            `source:hunter_io`,
+            `coogi_generated`
+          ]
         })
       }
     }
@@ -342,11 +373,42 @@ Best regards,
         // Create new lead directly in the campaign
         console.log(`📝 Creating new lead: ${contact.email}`)
 
+        // Generate better names if they're null or empty
+        let firstName = contact.first_name || ''
+        let lastName = contact.last_name || ''
+        
+        // If names are null/empty, try to extract from email
+        if (!firstName && !lastName) {
+          const email = contact.email || ''
+          const username = email.split('@')[0] || ''
+          
+          if (username && username.length > 3) {
+            // Try to extract name from email patterns like firstname.lastname@domain.com
+            const nameParts = username.replace(/[._-]/g, ' ').split(' ')
+              .filter(part => part.length > 1)
+              .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+            
+            if (nameParts.length >= 2) {
+              firstName = nameParts[0]
+              lastName = nameParts.slice(1).join(' ')
+            } else if (nameParts.length === 1) {
+              firstName = nameParts[0]
+              lastName = ''
+            }
+          }
+        }
+        
+        // Final fallback if still no names
+        if (!firstName && !lastName) {
+          firstName = 'Hiring'
+          lastName = 'Manager'
+        }
+
         // Format lead data with official Instantly.ai API fields
         const formattedLead: any = {
           email: contact.email,
-          first_name: contact.first_name || '',
-          last_name: contact.last_name || '',
+          first_name: firstName,
+          last_name: lastName,
           company_name: contact.company_name || '',
           phone: contact.phone || '',
           website: contact.website || '',

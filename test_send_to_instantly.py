@@ -22,7 +22,7 @@ def test_send_to_instantly():
     print("🧪 Testing Send to Instantly functionality...")
     
     # Test with a real batch_id that has data
-    batch_id = "batch_20250802_015816"
+    batch_id = "batch_20250802_181211"  # Updated to the new batch from logs
     
     # Try a different batch if this one has all existing leads
     print("🔍 Checking if this batch has new contacts...")

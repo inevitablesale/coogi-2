@@ -258,12 +258,49 @@ class ContactFinder:
                 logger.info(f"📧 Email {i}: {email_data}, Confidence: {confidence}, Sources: {len(sources)}")
                 logger.info(f"📧 Person details: {first_name} {last_name}, Position: {position}, LinkedIn: {linkedin_url}")
                 
-                # Filter for high-confidence emails
+                # Filter for high-confidence emails AND personal emails (not generic)
                 if confidence > 50 and email_data:
-                    # Create full name
+                    # Check if this is a personal email (not generic)
+                    email_lower = email_data.lower()
+                    username = email_lower.split('@')[0] if '@' in email_lower else ""
+                    
+                    # List of generic email prefixes to filter out
+                    generic_prefixes = [
+                        "info", "hello", "contact", "support", "help", "admin", "webmaster", 
+                        "postmaster", "abuse", "security", "noreply", "no-reply", "donotreply",
+                        "mail", "email", "sales", "marketing", "press", "media", "pr", "hr",
+                        "jobs", "careers", "recruiting", "talent", "hiring", "apply", "applications",
+                        "feedback", "suggestions", "complaints", "billing", "accounts", "finance",
+                        "legal", "compliance", "privacy", "terms", "service", "customer", "client",
+                        "general", "main", "office", "reception", "frontdesk", "receptionist",
+                        "team", "group", "department", "division", "unit", "section", "branch",
+                        "subsidiary", "corporate", "headquarters", "main", "primary", "secondary",
+                        "backup", "emergency", "urgent", "immediate", "priority", "vip", "executive",
+                        "management", "leadership", "board", "directors", "officers", "partners",
+                        "toinfo", "to", "from", "reply", "forward", "cc", "bcc"
+                    ]
+                    
+                    # Check if username contains any generic prefixes
+                    is_generic = any(prefix in username for prefix in generic_prefixes)
+                    
+                    if is_generic:
+                        logger.info(f"❌ Skipped generic email: {email_data} (username: {username})")
+                        continue
+                    
+                    # Create full name - try to extract from email if Hunter.io doesn't provide it
                     full_name = f"{first_name} {last_name}".strip()
-                    if not full_name:
-                        full_name = "Hiring Manager"  # Fallback if no name provided
+                    if not full_name or full_name == "None None":
+                        # Try to extract name from email address
+                        if '.' in username and len(username) > 3:
+                            # Common pattern: firstname.lastname@domain.com
+                            name_parts = username.replace('_', ' ').replace('.', ' ').replace('-', ' ')
+                            name_parts = [part.capitalize() for part in name_parts.split() if len(part) > 1]
+                            if name_parts:
+                                full_name = ' '.join(name_parts)
+                                first_name = name_parts[0] if len(name_parts) > 0 else ""
+                                last_name = ' '.join(name_parts[1:]) if len(name_parts) > 1 else ""
+                        else:
+                            full_name = "Hiring Manager"  # Fallback if no name provided
                     
                     email_info = {
                         "email": email_data,
@@ -281,11 +318,11 @@ class ContactFinder:
                         logger.info(f"✅ Added LinkedIn URL: {linkedin_url}")
                     
                     filtered_emails.append(email_info)
-                    logger.info(f"✅ Added email: {email_data} (name: {full_name}, title: {position}, LinkedIn: {linkedin_url})")
+                    logger.info(f"✅ Added personal email: {email_data} (name: {full_name}, title: {position}, LinkedIn: {linkedin_url})")
                 else:
                     logger.info(f"❌ Skipped email: {email_data} (confidence: {confidence})")
             
-            logger.info(f"✅ Step 3 Complete: Filtered to {len(filtered_emails)} high-confidence emails")
+            logger.info(f"✅ Step 3 Complete: Filtered to {len(filtered_emails)} personal emails")
             
             return filtered_emails
             
