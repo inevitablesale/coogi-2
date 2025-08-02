@@ -1166,7 +1166,12 @@ async def search_jobs_stream(request: JobSearchRequest):
                     # Find contacts
                     role_hint = job.get('title', '')
                     keywords = [role_hint] + search_params.get('keywords', [])
-                    contacts, has_ta_team, employee_roles, company_found = contact_finder.find_contacts(company, role_hint, keywords, job.get('linkedin_company_url'))
+                    contacts, has_ta_team, employee_roles, company_found = contact_finder.find_contacts(
+                        company=company,
+                        role_hint=role_hint,
+                        keywords=keywords,
+                        company_website=job.get('linkedin_company_url')
+                    )
                     
                     # Cache the company analysis results
                     analyzed_companies[company] = {
