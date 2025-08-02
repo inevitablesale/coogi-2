@@ -465,6 +465,13 @@
                 0 0 20px rgba(255, 0, 255, 0.2);
         }
 
+        .form-text {
+            font-size: 0.875rem;
+            color: #718096;
+            margin-top: 0.25rem;
+            font-style: italic;
+        }
+
         .template-selector {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -1397,7 +1404,11 @@
                         </select>
                     </div>
 
-
+                    <div class="form-group">
+                        <label for="customTags">Custom Tags (comma-separated)</label>
+                        <input type="text" id="customTags" name="customTags" class="form-control" placeholder="e.g., urgent, high-priority, tech-company">
+                        <small class="form-text">Optional: Add custom tags to leads for better organization</small>
+                    </div>
 
                     <button type="submit" class="btn btn-primary" id="startAgentBtn">
                         ⚡ LAUNCH AGENT
@@ -1707,6 +1718,10 @@
             try {
                 const query = formData.get('query');
                 
+                // Parse custom tags
+                const customTagsInput = formData.get('customTags');
+                const customTags = customTagsInput ? customTagsInput.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0) : null;
+                
                 const requestBody = {
                     query: query,
                     hours_old: parseInt(formData.get('hoursOld')),
@@ -1714,7 +1729,8 @@
                     auto_generate_messages: false,
                     create_campaigns: true,
                     campaign_name: null,
-                    min_score: 0.5
+                    min_score: 0.5,
+                    custom_tags: customTags
                 };
                 
                 console.log('🚀 Starting agent with request:', requestBody);

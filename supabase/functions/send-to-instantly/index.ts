@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const INSTANTLY_API_BASE = "https://api.instantly.ai/api/v2"
 
@@ -12,6 +13,7 @@ interface Contact {
   title?: string
   linkedin_url?: string
   personalization?: string
+  tags?: string[]
 }
 
 interface InstantlyLead {
@@ -24,6 +26,10 @@ interface InstantlyLead {
   personalization?: string
   campaign?: string
   list_id?: string
+  tags?: string[]
+  job_title?: string
+  linkedin_url?: string
+  custom_variables?: Record<string, any>
 }
 
 interface MoveLeadsRequest {
@@ -48,12 +54,12 @@ serve(async (req) => {
   }
 
   try {
-    const { contacts, campaign_id, list_id, action } = await req.json()
+    const { batch_id, campaign_id, list_id, action } = await req.json()
 
     // Validate required fields
-    if (!contacts || !Array.isArray(contacts)) {
+    if (!batch_id) {
       return new Response(
-        JSON.stringify({ error: 'Contacts array is required' }),
+        JSON.stringify({ error: 'batch_id is required' }),
         {
           status: 400,
           headers: {
@@ -63,6 +69,11 @@ serve(async (req) => {
         }
       )
     }
+
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // Get Instantly API key from environment
     const instantlyApiKey = Deno.env.get('INSTANTLY_API_KEY')
@@ -83,6 +94,57 @@ serve(async (req) => {
       'Authorization': `Bearer ${instantlyApiKey}`,
       'Content-Type': 'application/json',
     }
+
+    // Fetch email_list data from Supabase
+    const { data: hunterEmailsData, error: supabaseError } = await supabase
+      .from('hunter_emails')
+      .select('*')
+      .eq('batch_id', batch_id)
+
+    if (supabaseError) {
+      return new Response(
+        JSON.stringify({ error: `Supabase error: ${supabaseError.message}` }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      )
+    }
+
+    if (!hunterEmailsData || hunterEmailsData.length === 0) {
+      return new Response(
+        JSON.stringify({ error: 'No hunter_emails data found for this batch' }),
+        {
+          status: 404,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      )
+    }
+
+    // Extract contacts from email_list data
+    const contacts: Contact[] = []
+    for (const record of hunterEmailsData) {
+      const emailList = record.email_list || []
+      for (const contact of emailList) {
+        contacts.push({
+          email: contact.email,
+          first_name: contact.first_name,
+          last_name: contact.last_name,
+          company_name: contact.company,
+          title: contact.title,
+          linkedin_url: contact.linkedin_url,
+          tags: [`company:${contact.company}`, `source:hunter_io`, `coogi_generated`]
+        })
+      }
+    }
+
+    console.log(`📧 Found ${contacts.length} contacts from email_list data`)
 
     let result
 
@@ -132,34 +194,74 @@ serve(async (req) => {
 })
 
 async function createLeads(contacts: Contact[], campaign_id?: string, list_id?: string, headers?: Record<string, string>) {
-  const createdLeads = []
-  const errors = []
+  const createdLeads: any[] = []
+  const errors: any[] = []
+
+  // First, we need to create or find a lead list
+  let leadListId = list_id
+  if (!leadListId) {
+    // Create a lead list for this batch
+    const listResponse = await fetch(`${INSTANTLY_API_BASE}/lead-lists`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        name: `Coogi Batch - ${new Date().toISOString().split('T')[0]}`,
+        description: 'Leads from Coogi agent batch'
+      })
+    })
+    
+    if (listResponse.ok) {
+      const listData = await listResponse.json()
+      leadListId = listData.id
+      console.log(`✅ Created lead list: ${leadListId}`)
+    } else {
+      console.error(`❌ Failed to create lead list: ${listResponse.status}`)
+      return {
+        success: false,
+        error: 'Failed to create lead list',
+        created_leads: [],
+        errors: []
+      }
+    }
+  }
 
   for (const contact of contacts) {
     try {
-      // Prepare lead data for Instantly API
-      const leadData: InstantlyLead = {
+      // Format lead data with official Instantly.ai API fields
+      const formattedLead = {
         email: contact.email,
-        first_name: contact.first_name,
-        last_name: contact.last_name,
-        company_name: contact.company_name,
-        website: contact.website,
-        phone: contact.phone,
-        personalization: contact.personalization,
+        first_name: contact.first_name || '',
+        last_name: contact.last_name || '',
+        company_name: contact.company_name || '',
+        phone: contact.phone || '',
+        website: contact.website || '',
+        personalization: contact.personalization || '',
+        list_id: leadListId
       }
 
-      // Add campaign or list ID if provided
-      if (campaign_id) {
-        leadData.campaign = campaign_id
-      } else if (list_id) {
-        leadData.list_id = list_id
+      // Add LinkedIn URL if available (as custom field)
+      if (contact.linkedin_url) {
+        formattedLead.linkedin_url = contact.linkedin_url
       }
+
+      // Add tags if supported by the API
+      if (contact.tags && contact.tags.length > 0) {
+        formattedLead.tags = [
+          `agent:coogi`,
+          `batch:${new Date().toISOString().split('T')[0]}`,
+          `company:${contact.company_name || 'unknown'}`,
+          `source:hunter_io`,
+          `coogi_generated`
+        ]
+      }
+
+      console.log(`📝 Creating lead: ${contact.email}`)
 
       // Create lead using Instantly API
       const response = await fetch(`${INSTANTLY_API_BASE}/leads`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(leadData),
+        body: JSON.stringify(formattedLead),
       })
 
       if (response.ok) {
@@ -170,6 +272,7 @@ async function createLeads(contacts: Contact[], campaign_id?: string, list_id?: 
           status: 'created',
           lead_data: lead,
         })
+        console.log(`✅ Created lead: ${contact.email} (ID: ${lead.id})`)
       } else {
         const errorData = await response.json()
         errors.push({
@@ -177,17 +280,19 @@ async function createLeads(contacts: Contact[], campaign_id?: string, list_id?: 
           error: errorData,
           status: 'failed',
         })
+        console.error(`❌ Failed to create lead ${contact.email}: ${response.status} - ${JSON.stringify(errorData)}`)
       }
 
       // Rate limiting - wait 100ms between requests
       await new Promise(resolve => setTimeout(resolve, 100))
 
-    } catch (error) {
+    } catch (error: any) {
       errors.push({
         contact,
         error: error.message,
         status: 'failed',
       })
+      console.error(`❌ Error creating lead ${contact.email}: ${error.message}`)
     }
   }
 
@@ -199,6 +304,7 @@ async function createLeads(contacts: Contact[], campaign_id?: string, list_id?: 
       total_contacts: contacts.length,
       created: createdLeads.length,
       failed: errors.length,
+      lead_list_id: leadListId
     },
   }
 }

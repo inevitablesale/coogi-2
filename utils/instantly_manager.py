@@ -406,6 +406,10 @@ class InstantlyManager:
                     "list_id": lead_list_id
                 }
                 
+                # Add tags if provided
+                if lead.get("tags"):
+                    formatted_lead["tags"] = lead.get("tags")
+                
                 # Add LinkedIn URL if available
                 if lead.get("linkedin_url"):
                     formatted_lead["linkedin_url"] = lead.get("linkedin_url")
@@ -727,6 +731,7 @@ class InstantlyManager:
                     "company": lead.get("company", ""),
                     "job_title": lead.get("job_title", ""),
                     "contact_job_title": lead.get("title", ""),  # Contact's job title
+                    "tags": lead.get("tags", []),  # Add tags support
                     "custom_fields": {
                         "contact_title": lead.get("title", ""),
                         "job_url": lead.get("job_url", ""),

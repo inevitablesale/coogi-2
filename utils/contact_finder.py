@@ -271,7 +271,8 @@ class ContactFinder:
                         "first_name": first_name,
                         "last_name": last_name,
                         "title": position if position else "Hiring Manager",
-                        "confidence": confidence
+                        "confidence": confidence,
+                        "company": company  # Add company information
                     }
                     
                     # Add LinkedIn URL if available

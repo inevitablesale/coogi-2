@@ -285,6 +285,7 @@ class JobSearchRequest(BaseModel):
     create_campaigns: bool = False  # Optional: automatically create Instantly campaigns
     campaign_name: Optional[str] = None  # Optional: custom campaign name
     min_score: float = 0.5  # Minimum lead score for campaign inclusion
+    custom_tags: Optional[List[str]] = None  # Optional: custom tags to add to leads
 
 class Lead(BaseModel):
     name: str
@@ -689,7 +690,8 @@ async def search_jobs(request: JobSearchRequest):
                                         "first_name": email_info.get("first_name", ""),
                                         "last_name": email_info.get("last_name", ""),
                                         "title": email_info["title"],
-                                        "source": "hunter_io"
+                                        "source": "hunter_io",
+                                        "tags": [f"company:{company}", f"job_title:{job_title}", "source:hunter_io", "coogi_generated"] + (request.custom_tags or [])
                                     }
                                     leads.append(lead)
                                     await log_to_supabase(batch_id, f"📝 Created lead for {company}: {email_info['name']} ({email_info['title']}) - {email_info['email']}", "info", company)
@@ -1980,7 +1982,8 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                                         "first_name": email_info.get("first_name", ""),
                                         "last_name": email_info.get("last_name", ""),
                                         "title": email_info["title"],
-                                        "source": "hunter_io"
+                                        "source": "hunter_io",
+                                        "tags": [f"company:{company}", f"job_title:{job_title}", "source:hunter_io", "coogi_generated"] + (request.custom_tags or [])
                                     }
                                     
                                     # Add LinkedIn URL if available from Hunter.io response
