@@ -762,11 +762,6 @@
                     
                     if (contacts.length > 0) {
                         container.innerHTML = `
-                                            <div style="margin-bottom: 15px;">
-                    <button id="addToInstantlyBtn" class="action-button" onclick="addSelectedContactsToInstantly()">
-                        🚀 Send All Contacts to Instantly
-                    </button>
-                </div>
                             <table class="data-table">
                                 <thead>
                                     <tr>
@@ -793,9 +788,6 @@
                         
                         // Store contacts globally for access by other functions
                         window.agentContacts = contacts;
-                        
-                        // Initialize the button state
-                        updateAddButton();
                     } else {
                         container.innerHTML = '<div class="loading">No contact information found in hunter_emails data</div>';
                     }
@@ -851,68 +843,6 @@
             }
         }
 
-        // Contact selection and Instantly integration functions
-        function toggleAllContacts(checkbox) {
-            const contactCheckboxes = document.querySelectorAll('.contact-checkbox');
-            contactCheckboxes.forEach(cb => {
-                cb.checked = checkbox.checked;
-            });
-            updateAddButton();
-        }
-        
-        function updateAddButton() {
-            const addButton = document.getElementById('addToInstantlyBtn');
-            addButton.disabled = false;
-            addButton.textContent = '🚀 Send All Contacts to Instantly';
-        }
-        
-        async function addSelectedContactsToInstantly() {
-            try {
-                const addButton = document.getElementById('addToInstantlyBtn');
-                addButton.disabled = true;
-                addButton.textContent = '🔄 Adding to Instantly...';
-                
-                // Get batch_id from URL parameters
-                const urlParams = new URLSearchParams(window.location.search);
-                const batchId = urlParams.get('batch_id');
-                
-                if (!batchId) {
-                    throw new Error('No batch_id found in URL');
-                }
-                
-                // Call the edge function to add contacts to Instantly using email_list data
-                const response = await fetch(`${EDGE_FUNCTIONS_BASE}/send-to-instantly`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${await getAuthToken()}`
-                    },
-                    body: JSON.stringify({
-                        batch_id: batchId,
-                        action: 'create_leads'
-                    })
-                });
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    const totalContacts = result.summary?.total_contacts || 0;
-                    const createdLeads = result.summary?.created || 0;
-                    alert(`✅ Successfully added ${createdLeads} contact${createdLeads > 1 ? 's' : ''} to Instantly! (${totalContacts} total contacts found)`);
-                } else {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP ${response.status}: ${errorText}`);
-                }
-                
-            } catch (error) {
-                console.error('Error adding contacts to Instantly:', error);
-                alert(`❌ Error adding contacts to Instantly: ${error.message}`);
-            } finally {
-                const addButton = document.getElementById('addToInstantlyBtn');
-                addButton.disabled = false;
-                updateAddButton();
-            }
-        }
-        
         // Initialize page when DOM is loaded
         document.addEventListener('DOMContentLoaded', initializePage);
     </script>

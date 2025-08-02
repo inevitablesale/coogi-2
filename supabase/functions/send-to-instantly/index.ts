@@ -164,8 +164,13 @@ serve(async (req) => {
         if (!firstName) firstName = 'Unknown'
         if (!lastName) lastName = 'Contact'
         
-        // Generate website from email domain
-        const website = contact.email ? `https://${contact.email.split('@')[1]}` : ''
+        // Use domain from Supabase record if available, otherwise generate from email
+        let website = ''
+        if (record.domain) {
+          website = `https://${record.domain}`
+        } else if (contact.email) {
+          website = `https://${contact.email.split('@')[1]}`
+        }
         
         contacts.push({
           email: contact.email || '',
@@ -175,7 +180,6 @@ serve(async (req) => {
           website: website,
           title: contact.title || 'Hiring Manager',
           linkedin_url: contact.linkedin_url || '',
-          confidence: contact.confidence || 0,
           tags: [
             `company:${contact.company || record.company || 'unknown'}`,
             `source:hunter_io`,
@@ -539,13 +543,13 @@ async function getAgentName(batch_id: string): Promise<string> {
     // Get agent information from Supabase
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
     
     // First try to get agent from agents table
     const agentResponse = await supabase
       .from('agents')
-      .select('query, name')
+      .select('prompt, name')
       .eq('batch_id', batch_id)
       .single()
     
@@ -565,18 +569,18 @@ async function getAgentName(batch_id: string): Promise<string> {
         }
       }
       
-      // Fallback to extracting from query
-      const query = agentResponse.data.query || ''
-      if (query) {
-        // Extract meaningful words from the query
-        const words = query.split(' ')
+      // Fallback to extracting from prompt
+      const prompt = agentResponse.data.prompt || ''
+      if (prompt) {
+        // Extract the first meaningful word from the prompt
+        const words = prompt.split(' ')
           .filter(word => word.length > 2) // Filter out short words
-          .slice(0, 3) // Take first 3 meaningful words
-          .join(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()) // Capitalize first letter
         
-        if (words) {
-          console.log(`📝 Using query-based name: ${words}`)
-          return words
+        if (words.length > 0) {
+          const agentName = words[0] // Use the first meaningful word
+          console.log(`📝 Using prompt-based name: ${agentName} (from prompt: "${prompt}")`)
+          return agentName
         }
       }
     }
@@ -592,15 +596,15 @@ async function getAgentName(batch_id: string): Promise<string> {
     
     if (hunterResponse.data && hunterResponse.data.query) {
       const query = hunterResponse.data.query
-      // Extract meaningful words from the query
+      // Extract the first meaningful word from the query
       const words = query.split(' ')
         .filter(word => word.length > 2) // Filter out short words
-        .slice(0, 3) // Take first 3 meaningful words
-        .join(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()) // Capitalize first letter
       
-      if (words) {
-        console.log(`📝 Using hunter_emails query-based name: ${words}`)
-        return words
+      if (words.length > 0) {
+        const agentName = words[0] // Use the first meaningful word
+        console.log(`📝 Using hunter_emails query-based name: ${agentName} (from query: "${query}")`)
+        return agentName
       }
     }
     
@@ -755,4 +759,4 @@ async function moveLeads(contacts: Contact[], campaign_id?: string, list_id?: st
       errors,
     }
   }
-} 
+}

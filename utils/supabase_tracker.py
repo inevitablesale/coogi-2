@@ -86,19 +86,31 @@ class CompanyProcessingTracker:
             print(f"Error saving RapidAPI analysis: {e}")
     
     def save_hunter_emails(self, company: str, job_title: str, job_url: str, 
-                          emails: List[str], error: Optional[str] = None):
+                          emails: List[Dict], error: Optional[str] = None):
         """Save Hunter.io email results"""
         if not supabase:
             return
         
         try:
+            # Extract domain from the first email if available
+            domain = None
+            if emails and len(emails) > 0:
+                # Try to get domain from email address
+                first_email = emails[0].get("email", "")
+                if "@" in first_email:
+                    domain = first_email.split("@")[1]
+                # Or use company website if available
+                elif emails[0].get("company"):
+                    domain = emails[0].get("company")
+            
             data = {
                 "batch_id": self.batch_id,
                 "company": company,
                 "job_title": job_title,
                 "job_url": job_url,
                 "emails_found": len(emails),
-                "email_list": emails,
+                "email_list": emails,  # Save structured email data
+                "domain": domain,  # Add domain information
                 "search_success": error is None,
                 "search_error": error,
                 "timestamp": datetime.now().isoformat()

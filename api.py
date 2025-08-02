@@ -282,7 +282,7 @@ class JobSearchRequest(BaseModel):
     hours_old: int = 720  # Default to 1 month for broader results
     enforce_salary: bool = True
     auto_generate_messages: bool = False
-    create_campaigns: bool = False  # Optional: automatically create Instantly campaigns
+    create_campaigns: bool = True  # Default to True - automatically create Instantly campaigns
     campaign_name: Optional[str] = None  # Optional: custom campaign name
     min_score: float = 0.5  # Minimum lead score for campaign inclusion
     custom_tags: Optional[List[str]] = None  # Optional: custom tags to add to leads
@@ -679,43 +679,54 @@ async def search_jobs(request: JobSearchRequest):
                         if request.create_campaigns and hunter_emails:
                             await log_to_supabase(batch_id, f"🚀 Creating Instantly campaign for {company}", "info", company, job_title, job_url, "instantly_start")
                             try:
-                                # Create leads from Hunter.io emails
-                                leads = []
-                                for email_info in hunter_emails:
-                                    lead = {
-                                        "email": email_info["email"],
-                                        "company": company,
-                                        "job_title": job_title,
-                                        "name": email_info["name"],
-                                        "first_name": email_info.get("first_name", ""),
-                                        "last_name": email_info.get("last_name", ""),
-                                        "title": email_info["title"],
-                                        "source": "hunter_io",
-                                        "tags": [f"company:{company}", f"job_title:{job_title}", "source:hunter_io", "coogi_generated"] + (request.custom_tags or [])
-                                    }
-                                    leads.append(lead)
-                                    await log_to_supabase(batch_id, f"📝 Created lead for {company}: {email_info['name']} ({email_info['title']}) - {email_info['email']}", "info", company)
+                                # Call the Edge Function to send leads to Instantly.ai
+                                import httpx
                                 
-                                # Create campaign using InstantlyManager
-                                from utils.instantly_manager import InstantlyManager
-                                instantly_manager = InstantlyManager()
+                                # Prepare the request for the Edge Function
+                                edge_function_url = f"{os.getenv('SUPABASE_URL', '')}/functions/v1/send-to-instantly"
+                                edge_function_payload = {
+                                    "batch_id": batch_id,
+                                    "action": "create_leads"
+                                }
                                 
-                                campaign_name = f"{company} - {job_title} Campaign"
-                                await log_to_supabase(batch_id, f"🚀 Step 3c: Creating Instantly campaign for {company} with {len(leads)} leads", "info", company)
+                                # Get the service role key for the Edge Function
+                                service_role_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+                                if not service_role_key:
+                                    await log_to_supabase(batch_id, f"❌ SUPABASE_SERVICE_ROLE_KEY not configured", "error", company, job_title, job_url, "instantly_error")
+                                    continue
                                 
-                                campaign_id = instantly_manager.create_recruiting_campaign(leads, campaign_name)
+                                headers = {
+                                    "Authorization": f"Bearer {service_role_key}",
+                                    "Content-Type": "application/json"
+                                }
                                 
-                                if campaign_id:
-                                    campaigns_created.append(campaign_id)
-                                    leads_added += len(hunter_emails)
-                                    await log_to_supabase(batch_id, f"✅ Created Instantly campaign for {company}: {campaign_name} (ID: {campaign_id})", "success", company, job_title, job_url, "instantly_success")
-                                    tracker.save_instantly_campaign(company, campaign_id, campaign_name, len(hunter_emails))
+                                await log_to_supabase(batch_id, f"📡 Calling Edge Function to send {len(hunter_emails)} leads to Instantly.ai", "info", company, job_title, job_url, "instantly_edge_call")
+                                
+                                async with httpx.AsyncClient() as client:
+                                    response = await client.post(
+                                        edge_function_url,
+                                        json=edge_function_payload,
+                                        headers=headers,
+                                        timeout=30.0
+                                    )
+                                
+                                if response.status_code == 200:
+                                    result = response.json()
+                                    if result.get('success'):
+                                        created_leads = result.get('created_leads', [])
+                                        leads_added += len(created_leads)
+                                        campaigns_created.append(result.get('summary', {}).get('campaign_id', ''))
+                                        await log_to_supabase(batch_id, f"✅ Successfully sent {len(created_leads)} leads to Instantly.ai", "success", company, job_title, job_url, "instantly_success")
+                                        tracker.save_instantly_campaign(company, result.get('summary', {}).get('campaign_id', ''), f"Coogi Agent - {company}", len(created_leads))
+                                    else:
+                                        await log_to_supabase(batch_id, f"❌ Edge Function returned error: {result.get('error', 'Unknown error')}", "error", company, job_title, job_url, "instantly_error")
+                                        tracker.save_instantly_campaign(company, error=result.get('error', 'Edge Function error'))
                                 else:
-                                    await log_to_supabase(batch_id, f"❌ Failed to create Instantly campaign for {company}", "error", company, job_title, job_url, "instantly_error")
-                                    tracker.save_instantly_campaign(company, error="Campaign creation failed")
+                                    await log_to_supabase(batch_id, f"❌ Edge Function call failed: {response.status_code} - {response.text}", "error", company, job_title, job_url, "instantly_error")
+                                    tracker.save_instantly_campaign(company, error=f"Edge Function HTTP {response.status_code}")
                                     
                             except Exception as e:
-                                await log_to_supabase(batch_id, f"❌ Error creating Instantly campaign for {company}: {str(e)}", "error", company, job_title, job_url, "instantly_error")
+                                await log_to_supabase(batch_id, f"❌ Error calling Edge Function for {company}: {str(e)}", "error", company, job_title, job_url, "instantly_error")
                                 tracker.save_instantly_campaign(company, error=str(e))
                         
                         # Create company analysis record
@@ -1972,49 +1983,54 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                             await log_to_supabase(batch_id, f"🚀 Step 3c: Creating Instantly campaign for {company}", "info", company)
                             
                             try:
-                                # Create leads for Instantly
-                                leads = []
-                                for email_info in hunter_emails:
-                                    lead = {
-                                        "email": email_info["email"],
-                                        "company": company,
-                                        "job_title": job_title,
-                                        "name": email_info["name"],
-                                        "first_name": email_info.get("first_name", ""),
-                                        "last_name": email_info.get("last_name", ""),
-                                        "title": email_info["title"],
-                                        "source": "hunter_io",
-                                        "tags": [f"company:{company}", f"job_title:{job_title}", "source:hunter_io", "coogi_generated"] + (request.custom_tags or [])
-                                    }
-                                    
-                                    # Add LinkedIn URL if available from Hunter.io response
-                                    if email_info.get("linkedin_url"):
-                                        lead["linkedin_url"] = email_info["linkedin_url"]
-                                        await log_to_supabase(batch_id, f"📝 Added LinkedIn URL for {email_info['name']}: {email_info['linkedin_url']}", "info", company)
-                                    
-                                    leads.append(lead)
-                                    await log_to_supabase(batch_id, f"📝 Created lead for {company}: {email_info['name']} ({email_info['title']}) - {email_info['email']}", "info", company)
+                                # Call the Edge Function to send leads to Instantly.ai
+                                import httpx
                                 
-                                # Create campaign using InstantlyManager
-                                from utils.instantly_manager import InstantlyManager
-                                instantly_manager = InstantlyManager()
+                                # Prepare the request for the Edge Function
+                                edge_function_url = f"{os.getenv('SUPABASE_URL', '')}/functions/v1/send-to-instantly"
+                                edge_function_payload = {
+                                    "batch_id": batch_id,
+                                    "action": "create_leads"
+                                }
                                 
-                                campaign_name = f"{company} - {job_title} Campaign"
-                                await log_to_supabase(batch_id, f"🚀 Step 3c: Creating Instantly campaign for {company} with {len(leads)} leads", "info", company)
+                                # Get the service role key for the Edge Function
+                                service_role_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+                                if not service_role_key:
+                                    await log_to_supabase(batch_id, f"❌ SUPABASE_SERVICE_ROLE_KEY not configured", "error", company, job_title, job_url, "instantly_error")
+                                    continue
                                 
-                                campaign_id = instantly_manager.create_recruiting_campaign(leads, campaign_name)
+                                headers = {
+                                    "Authorization": f"Bearer {service_role_key}",
+                                    "Content-Type": "application/json"
+                                }
                                 
-                                if campaign_id:
-                                    campaigns_created.append(campaign_id)
-                                    leads_added += len(hunter_emails)
-                                    await log_to_supabase(batch_id, f"✅ Step 3c: Instantly campaign created for {company} (ID: {campaign_id})", "success", company, job_title, job_url, "instantly_success")
-                                    tracker.save_instantly_campaign(company, campaign_id, campaign_name, len(hunter_emails))
+                                await log_to_supabase(batch_id, f"📡 Calling Edge Function to send {len(hunter_emails)} leads to Instantly.ai", "info", company, job_title, job_url, "instantly_edge_call")
+                                
+                                async with httpx.AsyncClient() as client:
+                                    response = await client.post(
+                                        edge_function_url,
+                                        json=edge_function_payload,
+                                        headers=headers,
+                                        timeout=30.0
+                                    )
+                                
+                                if response.status_code == 200:
+                                    result = response.json()
+                                    if result.get('success'):
+                                        created_leads = result.get('created_leads', [])
+                                        leads_added += len(created_leads)
+                                        campaigns_created.append(result.get('summary', {}).get('campaign_id', ''))
+                                        await log_to_supabase(batch_id, f"✅ Successfully sent {len(created_leads)} leads to Instantly.ai", "success", company, job_title, job_url, "instantly_success")
+                                        tracker.save_instantly_campaign(company, result.get('summary', {}).get('campaign_id', ''), f"Coogi Agent - {company}", len(created_leads))
+                                    else:
+                                        await log_to_supabase(batch_id, f"❌ Edge Function returned error: {result.get('error', 'Unknown error')}", "error", company, job_title, job_url, "instantly_error")
+                                        tracker.save_instantly_campaign(company, error=result.get('error', 'Edge Function error'))
                                 else:
-                                    await log_to_supabase(batch_id, f"❌ Step 3c: Failed to create Instantly campaign for {company}", "error", company, job_title, job_url, "instantly_error")
-                                    tracker.save_instantly_campaign(company, error="Campaign creation failed")
+                                    await log_to_supabase(batch_id, f"❌ Edge Function call failed: {response.status_code} - {response.text}", "error", company, job_title, job_url, "instantly_error")
+                                    tracker.save_instantly_campaign(company, error=f"Edge Function HTTP {response.status_code}")
                                     
                             except Exception as e:
-                                await log_to_supabase(batch_id, f"❌ Step 3c: Error creating Instantly campaign for {company}: {str(e)}", "error", company, job_title, job_url, "instantly_error")
+                                await log_to_supabase(batch_id, f"❌ Error calling Edge Function for {company}: {str(e)}", "error", company, job_title, job_url, "instantly_error")
                                 tracker.save_instantly_campaign(company, error=str(e))
                         
                         elif request.create_campaigns:

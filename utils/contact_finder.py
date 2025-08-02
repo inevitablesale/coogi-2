@@ -223,7 +223,7 @@ class ContactFinder:
                 "domain": domain,
                 "company": company,
                 "type": "personal",  # Only get personal emails, filter out generic ones
-                "limit": 10,
+                "limit": 3,  # Limit to 3 emails maximum
                 "api_key": self.hunter_api_key
             }
             
