@@ -1039,7 +1039,8 @@ Contact: {{contact_title}}
         Create a complete recruiting campaign with leads
         """
         logger.info(f"🚀 create_recruiting_campaign called with {len(leads)} leads")
-        logger.info(f"📧 Lead details: {[f'{lead.get(\"email\", \"N/A\")} ({lead.get(\"name\", \"N/A\")})' for lead in leads]}")
+        lead_details = [f"{lead.get('email', 'N/A')} ({lead.get('name', 'N/A')})" for lead in leads]
+        logger.info(f"📧 Lead details: {lead_details}")
         
         if not leads:
             logger.warning("No leads provided for campaign")
