@@ -1951,6 +1951,7 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                                 
                                 if hunter_emails:
                                     await log_to_supabase(batch_id, f"✅ Step 3b: Found {len(hunter_emails)} Hunter.io emails for {company}", "success", company)
+                                    await log_to_supabase(batch_id, f"📧 Hunter.io emails: {[email.get('email', 'N/A') for email in hunter_emails]}", "info", company)
                                     tracker.save_hunter_emails(company, job_title, job_url, hunter_emails)
                                 else:
                                     await log_to_supabase(batch_id, f"⚠️ Step 3b: No Hunter.io emails found for {company}", "warning", company)
@@ -1963,6 +1964,7 @@ async def process_jobs_background_task(batch_id: str, jobs: List[Dict], request:
                             await log_to_supabase(batch_id, f"⏭️ Step 3b: Skipping Hunter.io for {company} (has TA team or company not found)", "info", company)
                         
                         # Step 3c: Instantly campaign creation
+                        await log_to_supabase(batch_id, f"🔍 Step 3c Debug: create_campaigns={request.create_campaigns}, hunter_emails_count={len(hunter_emails) if hunter_emails else 0}", "info", company)
                         if request.create_campaigns and hunter_emails:
                             await log_to_supabase(batch_id, f"🚀 Step 3c: Creating Instantly campaign for {company}", "info", company)
                             

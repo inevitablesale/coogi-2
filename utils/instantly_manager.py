@@ -12,6 +12,11 @@ class InstantlyManager:
         self.api_key = os.getenv("INSTANTLY_API_KEY", "")
         self.base_url = "https://api.instantly.ai"
         
+        # Debug logging
+        logger.info(f"🔑 InstantlyManager initialized with API key: {'✅ Present' if self.api_key else '❌ Missing'}")
+        if self.api_key:
+            logger.info(f"🔑 API key starts with: {self.api_key[:10]}...")
+        
         # Email domains for rotation (you can add more)
         self.email_domains = [
             "chuck@liacgroupagency.com",
@@ -356,6 +361,9 @@ class InstantlyManager:
         """
         Add leads to a lead list or update existing ones using the correct /api/v2/leads endpoint
         """
+        logger.info(f"🚀 add_or_update_leads_to_list called with {len(leads)} leads for list {lead_list_id}")
+        logger.info(f"🔑 API key present: {'✅' if self.api_key else '❌'}")
+        
         if not self.api_key or not lead_list_id:
             logger.warning("Missing Instantly API key or lead list ID")
             return False
@@ -1030,6 +1038,9 @@ Contact: {{contact_title}}
         """
         Create a complete recruiting campaign with leads
         """
+        logger.info(f"🚀 create_recruiting_campaign called with {len(leads)} leads")
+        logger.info(f"📧 Lead details: {[f'{lead.get('email', 'N/A')} ({lead.get('name', 'N/A')})' for lead in leads]}")
+        
         if not leads:
             logger.warning("No leads provided for campaign")
             return None
