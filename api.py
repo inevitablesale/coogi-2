@@ -30,7 +30,6 @@ import time  # Add time import for rate limiting
 import json
 import asyncio
 import httpx
-import aiohttp
 
 # Supabase setup (optional - will work without it)
 try:
