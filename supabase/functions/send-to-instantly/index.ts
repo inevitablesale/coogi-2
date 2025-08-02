@@ -132,11 +132,21 @@ serve(async (req) => {
     for (const record of hunterEmailsData) {
       const emailList = record.email_list || []
       for (const contact of emailList) {
+        // Extract website from email domain
+        let website = ""
+        if (contact.email) {
+          const emailDomain = contact.email.split('@')[1]
+          if (emailDomain) {
+            website = `https://${emailDomain}`
+          }
+        }
+        
         contacts.push({
           email: contact.email,
           first_name: contact.first_name,
           last_name: contact.last_name,
           company_name: contact.company,
+          website: website,
           title: contact.title,
           linkedin_url: contact.linkedin_url,
           tags: [`company:${contact.company}`, `source:hunter_io`, `coogi_generated`]
@@ -150,7 +160,7 @@ serve(async (req) => {
 
     if (action === 'create_leads') {
       // Create leads in Instantly
-      result = await createLeads(contacts, campaign_id, list_id, headers)
+      result = await createLeads(contacts, batch_id, campaign_id, list_id, headers)
     } else if (action === 'move_leads') {
       // Move existing leads to a campaign
       result = await moveLeads(contacts, campaign_id, list_id, headers)
@@ -193,94 +203,212 @@ serve(async (req) => {
   }
 })
 
-async function createLeads(contacts: Contact[], campaign_id?: string, list_id?: string, headers?: Record<string, string>) {
+async function createLeads(contacts: Contact[], batch_id: string, campaign_id?: string, list_id?: string, headers?: Record<string, string>) {
   const createdLeads: any[] = []
   const errors: any[] = []
 
-  // First, we need to create or find a lead list
-  let leadListId = list_id
-  if (!leadListId) {
-    // Create a lead list for this batch
-    const listResponse = await fetch(`${INSTANTLY_API_BASE}/lead-lists`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        name: `Coogi Batch - ${new Date().toISOString().split('T')[0]}`,
-        description: 'Leads from Coogi agent batch'
-      })
-    })
+  // First, we need to create or find a campaign for this agent
+  let agentCampaignId = campaign_id
+  if (!agentCampaignId) {
+    // Get agent information from the batch_id
+    const agentName = await getAgentName(batch_id)
+    console.log(`🔍 Looking for campaign for agent: ${agentName}`)
     
-    if (listResponse.ok) {
-      const listData = await listResponse.json()
-      leadListId = listData.id
-      console.log(`✅ Created lead list: ${leadListId}`)
+    // Try to find existing campaign for this agent
+    const existingCampaign = await findAgentCampaign(agentName, headers)
+    
+    if (existingCampaign) {
+      agentCampaignId = existingCampaign.id
+      console.log(`✅ Found existing campaign for agent: ${existingCampaign.name} (ID: ${agentCampaignId})`)
     } else {
-      console.error(`❌ Failed to create lead list: ${listResponse.status}`)
-      return {
-        success: false,
-        error: 'Failed to create lead list',
-        created_leads: [],
-        errors: []
+      // Create a new campaign for this agent
+      const campaignName = `Coogi Agent - ${agentName}`
+      
+      // Available email accounts to rotate through
+      const emailAccounts = [
+        "chuck@liacgroupagency.com",
+        "chuck@liacgroupworkforce.com", 
+        "chuck@liacworkforce.com",
+        "cole@liacgroupagency.com",
+        "cole@liacgroupworkforce.com",
+        "cole@liacworkforce.com",
+        "contact@liacgroupagency.com",
+        "contact@liacgroupworkforce.com",
+        "contact@liacworkforce.com"
+      ]
+      
+      // Pick a random email account for this campaign
+      const selectedEmail = emailAccounts[Math.floor(Math.random() * emailAccounts.length)]
+      
+      console.log(`🚀 Creating new campaign for agent: ${campaignName} with email: ${selectedEmail}`)
+      
+      const campaignResponse = await fetch(`${INSTANTLY_API_BASE}/campaigns`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: campaignName,
+          campaign_schedule: {
+            schedules: [
+              {
+                name: "Coogi Schedule",
+                timing: {
+                  from: "09:00",
+                  to: "17:00"
+                },
+                days: {
+                  0: true, // Monday
+                  1: true, // Tuesday
+                  2: true, // Wednesday
+                  3: true, // Thursday
+                  4: true, // Friday
+                  5: false, // Saturday
+                  6: false  // Sunday
+                },
+                timezone: "America/Chicago"
+              }
+            ],
+            start_date: new Date().toISOString(),
+            end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days from now
+          },
+          sequences: [
+            {
+              steps: [
+                {
+                  type: "email",
+                  subject: "Opportunity at {{company_name}}",
+                  body: `Hi {{first_name}},
+
+I noticed your role as {{job_title}} at {{company_name}} and thought you might be interested in a new opportunity.
+
+Would you be open to a brief conversation about potential roles that could be a great fit for your background?
+
+Best regards,
+{{sender_name}}`,
+                  delay: 0,
+                  variants: [
+                    {
+                      subject: "Opportunity at {{company_name}}",
+                      body: `Hi {{first_name}},
+
+I noticed your role as {{job_title}} at {{company_name}} and thought you might be interested in a new opportunity.
+
+Would you be open to a brief conversation about potential roles that could be a great fit for your background?
+
+Best regards,
+{{sender_name}}`
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          email_list: [selectedEmail],
+          daily_limit: 50,
+          stop_on_reply: true,
+          link_tracking: true,
+          open_tracking: true
+        })
+      })
+      
+      if (campaignResponse.ok) {
+        const campaignData = await campaignResponse.json()
+        agentCampaignId = campaignData.id
+        console.log(`✅ Created new campaign for agent: ${campaignName} (ID: ${agentCampaignId})`)
+      } else {
+        console.error(`❌ Failed to create campaign: ${campaignResponse.status}`)
+        return {
+          success: false,
+          error: 'Failed to create campaign',
+          created_leads: [],
+          errors: []
+        }
       }
     }
   }
 
+  // Create leads first (without campaign assignment)
+  const leadIds: string[] = []
+  
   for (const contact of contacts) {
     try {
-      // Format lead data with official Instantly.ai API fields
-      const formattedLead = {
-        email: contact.email,
-        first_name: contact.first_name || '',
-        last_name: contact.last_name || '',
-        company_name: contact.company_name || '',
-        phone: contact.phone || '',
-        website: contact.website || '',
-        personalization: contact.personalization || '',
-        list_id: leadListId
-      }
-
-      // Add LinkedIn URL if available (as custom field)
-      if (contact.linkedin_url) {
-        formattedLead.linkedin_url = contact.linkedin_url
-      }
-
-      // Add tags if supported by the API
-      if (contact.tags && contact.tags.length > 0) {
-        formattedLead.tags = [
-          `agent:coogi`,
-          `batch:${new Date().toISOString().split('T')[0]}`,
-          `company:${contact.company_name || 'unknown'}`,
-          `source:hunter_io`,
-          `coogi_generated`
-        ]
-      }
-
-      console.log(`📝 Creating lead: ${contact.email}`)
-
-      // Create lead using Instantly API
-      const response = await fetch(`${INSTANTLY_API_BASE}/leads`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(formattedLead),
-      })
-
-      if (response.ok) {
-        const lead = await response.json()
-        createdLeads.push({
-          contact,
-          lead_id: lead.id,
-          status: 'created',
-          lead_data: lead,
-        })
-        console.log(`✅ Created lead: ${contact.email} (ID: ${lead.id})`)
+      // Check if lead already exists by email
+      const existingLead = await findLeadByEmail(contact.email, headers)
+      
+      if (existingLead) {
+        // Skip existing lead (Instantly.ai doesn't have a PUT endpoint)
+        console.log(`⏭️ Skipping existing lead: ${contact.email} (ID: ${existingLead.id})`)
+        leadIds.push(existingLead.id)
       } else {
-        const errorData = await response.json()
-        errors.push({
-          contact,
-          error: errorData,
-          status: 'failed',
+        // Create new lead directly in the campaign
+        console.log(`📝 Creating new lead: ${contact.email}`)
+
+        // Format lead data with official Instantly.ai API fields
+        const formattedLead: any = {
+          email: contact.email,
+          first_name: contact.first_name || '',
+          last_name: contact.last_name || '',
+          company_name: contact.company_name || '',
+          phone: contact.phone || '',
+          website: contact.website || '',
+          personalization: contact.personalization || '',
+          campaign: agentCampaignId // Assign directly to campaign
+        }
+
+        // Add custom fields for additional data
+        const customFields: Record<string, any> = {}
+        
+        // Add LinkedIn URL as custom field
+        if (contact.linkedin_url) {
+          customFields.linkedin_url = contact.linkedin_url
+        }
+        
+        // Add job title as custom field
+        if (contact.title) {
+          customFields.job_title = contact.title
+        }
+        
+        // Add custom fields if we have any
+        if (Object.keys(customFields).length > 0) {
+          formattedLead.custom_variables = customFields
+        }
+
+        // Add tags if supported by the API
+        if (contact.tags && contact.tags.length > 0) {
+          formattedLead.tags = [
+            `agent:coogi`,
+            `batch:${new Date().toISOString().split('T')[0]}`,
+            `company:${contact.company_name || 'unknown'}`,
+            `source:hunter_io`,
+            `coogi_generated`
+          ]
+        }
+
+        // Create lead using Instantly API
+        const response = await fetch(`${INSTANTLY_API_BASE}/leads`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(formattedLead),
         })
-        console.error(`❌ Failed to create lead ${contact.email}: ${response.status} - ${JSON.stringify(errorData)}`)
+
+        if (response.ok) {
+          const lead = await response.json()
+          createdLeads.push({
+            contact,
+            lead_id: lead.id,
+            status: 'created',
+            lead_data: lead,
+          })
+          leadIds.push(lead.id)
+          console.log(`✅ Created lead: ${contact.email} (ID: ${lead.id})`)
+        } else {
+          const errorData = await response.json()
+          errors.push({
+            contact,
+            error: errorData,
+            status: 'failed',
+          })
+          console.error(`❌ Failed to create lead ${contact.email}: ${response.status} - ${JSON.stringify(errorData)}`)
+        }
       }
 
       // Rate limiting - wait 100ms between requests
@@ -292,9 +420,12 @@ async function createLeads(contacts: Contact[], campaign_id?: string, list_id?: 
         error: error.message,
         status: 'failed',
       })
-      console.error(`❌ Error creating lead ${contact.email}: ${error.message}`)
+      console.error(`❌ Error processing lead ${contact.email}: ${error.message}`)
     }
   }
+
+  // Leads are now created directly in the campaign, no need to move them
+  console.log(`✅ Created ${createdLeads.length} leads directly in campaign ${agentCampaignId}`)
 
   return {
     success: true,
@@ -303,9 +434,159 @@ async function createLeads(contacts: Contact[], campaign_id?: string, list_id?: 
     summary: {
       total_contacts: contacts.length,
       created: createdLeads.length,
+      skipped: contacts.length - createdLeads.length - errors.length,
       failed: errors.length,
-      lead_list_id: leadListId
+      campaign_id: agentCampaignId
     },
+  }
+}
+
+async function findLeadByEmail(email: string, headers?: Record<string, string>): Promise<any | null> {
+  try {
+    // Search for lead by email using the list endpoint
+    const response = await fetch(`${INSTANTLY_API_BASE}/leads/list`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        search: email,
+        limit: 10
+      })
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      const leads = data.items || []
+      
+      // Find exact email match
+      const exactMatch = leads.find((lead: any) => 
+        lead.email && lead.email.toLowerCase() === email.toLowerCase()
+      )
+      
+      return exactMatch || null
+    }
+    
+    return null
+  } catch (error) {
+    console.error(`❌ Error finding lead by email ${email}: ${error}`)
+    return null
+  }
+}
+
+async function getAgentName(batch_id: string): Promise<string> {
+  try {
+    // Get agent information from Supabase
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    )
+    
+    // First try to get agent from agents table
+    const agentResponse = await supabase
+      .from('agents')
+      .select('query, name')
+      .eq('batch_id', batch_id)
+      .single()
+    
+    if (agentResponse.data) {
+      // First try to use the agent name if it exists
+      const agentName = agentResponse.data.name
+      if (agentName && agentName.trim()) {
+        // Extract the actual name from "Agent: {name}..."
+        const nameMatch = agentName.match(/Agent:\s*(.+?)(?:\.\.\.)?$/)
+        if (nameMatch && nameMatch[1]) {
+          const extractedName = nameMatch[1].trim()
+          console.log(`📝 Using agent name: ${extractedName}`)
+          return extractedName
+        } else {
+          console.log(`📝 Using full agent name: ${agentName}`)
+          return agentName.trim()
+        }
+      }
+      
+      // Fallback to extracting from query
+      const query = agentResponse.data.query || ''
+      if (query) {
+        // Extract meaningful words from the query
+        const words = query.split(' ')
+          .filter(word => word.length > 2) // Filter out short words
+          .slice(0, 3) // Take first 3 meaningful words
+          .join(' ')
+        
+        if (words) {
+          console.log(`📝 Using query-based name: ${words}`)
+          return words
+        }
+      }
+    }
+    
+    // If no agent found, try to get query from hunter_emails table
+    console.log(`🔍 Agent not found in agents table, checking hunter_emails...`)
+    const hunterResponse = await supabase
+      .from('hunter_emails')
+      .select('query')
+      .eq('batch_id', batch_id)
+      .limit(1)
+      .single()
+    
+    if (hunterResponse.data && hunterResponse.data.query) {
+      const query = hunterResponse.data.query
+      // Extract meaningful words from the query
+      const words = query.split(' ')
+        .filter(word => word.length > 2) // Filter out short words
+        .slice(0, 3) // Take first 3 meaningful words
+        .join(' ')
+      
+      if (words) {
+        console.log(`📝 Using hunter_emails query-based name: ${words}`)
+        return words
+      }
+    }
+    
+    // Final fallback: use last 8 characters of batch_id
+    const fallbackName = `Agent-${batch_id.slice(-8)}`
+    console.log(`📝 Using fallback name: ${fallbackName}`)
+    return fallbackName
+  } catch (error) {
+    console.error(`❌ Error getting agent name: ${error}`)
+    // Fallback: use last 8 characters of batch_id
+    const fallbackName = `Agent-${batch_id.slice(-8)}`
+    console.log(`📝 Using fallback name: ${fallbackName}`)
+    return fallbackName
+  }
+}
+
+async function findAgentCampaign(agentName: string, headers?: Record<string, string>): Promise<any | null> {
+  try {
+    // Get all campaigns and look for one with this agent name
+    const response = await fetch(`${INSTANTLY_API_BASE}/campaigns`, {
+      method: 'GET',
+      headers
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      const campaigns = data.campaigns || []
+      
+      // Look for a campaign with this agent name
+      const agentCampaign = campaigns.find((campaign: any) => 
+        campaign.name && 
+        campaign.name.includes('Coogi Agent') &&
+        campaign.name.includes(agentName)
+      )
+      
+      if (agentCampaign) {
+        console.log(`🔍 Found existing agent campaign: ${agentCampaign.name} (created: ${agentCampaign.created_at})`)
+      } else {
+        console.log(`🔍 No existing agent campaign found for: ${agentName}`)
+      }
+      
+      return agentCampaign || null
+    }
+    
+    return null
+  } catch (error) {
+    console.error(`❌ Error finding agent campaign: ${error}`)
+    return null
   }
 }
 
