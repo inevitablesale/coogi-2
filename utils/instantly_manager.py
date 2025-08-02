@@ -390,8 +390,8 @@ class InstantlyManager:
                 # Format lead data
                 formatted_lead = {
                     "email": email,
-                    "first_name": lead.get("name", "").split()[0] if lead.get("name") else "",
-                    "last_name": " ".join(lead.get("name", "").split()[1:]) if lead.get("name") and len(lead.get("name", "").split()) > 1 else "",
+                    "first_name": lead.get("first_name", ""),
+                    "last_name": lead.get("last_name", ""),
                     "company_name": lead.get("company", ""),
                     "job_title": lead.get("job_title", ""),
                     "website": lead.get("company_website", ""),
@@ -494,8 +494,8 @@ class InstantlyManager:
                 # Format lead for the /api/v2/leads endpoint
                 formatted_lead = {
                     "email": lead.get("email", ""),
-                    "first_name": lead.get("name", "").split()[0] if lead.get("name") else "",
-                    "last_name": " ".join(lead.get("name", "").split()[1:]) if lead.get("name") and len(lead.get("name", "").split()) > 1 else "",
+                    "first_name": lead.get("first_name", ""),
+                    "last_name": lead.get("last_name", ""),
                     "company_name": lead.get("company", ""),
                     "job_title": lead.get("job_title", ""),
                     "website": lead.get("company_website", ""),
@@ -714,8 +714,8 @@ class InstantlyManager:
             for lead in unique_leads:
                 formatted_lead = {
                     "email": lead.get("email", ""),
-                    "first_name": lead.get("name", "").split()[0] if lead.get("name") else "",
-                    "last_name": " ".join(lead.get("name", "").split()[1:]) if lead.get("name") and len(lead.get("name", "").split()) > 1 else "",
+                    "first_name": lead.get("first_name", ""),
+                    "last_name": lead.get("last_name", ""),
                     "company": lead.get("company", ""),
                     "job_title": lead.get("job_title", ""),
                     "contact_job_title": lead.get("title", ""),  # Contact's job title
