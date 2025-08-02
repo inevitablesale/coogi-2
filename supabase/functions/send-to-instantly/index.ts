@@ -97,6 +97,10 @@ serve(async (req) => {
 
     // Use hunter_emails from payload if provided, otherwise query database
     let hunterEmailsData = []
+    console.log(`🔍 Debug: hunter_emails from payload:`, hunter_emails)
+    console.log(`🔍 Debug: hunter_emails length:`, hunter_emails ? hunter_emails.length : 'undefined')
+    console.log(`🔍 Debug: hunter_emails type:`, typeof hunter_emails)
+    
     if (hunter_emails && hunter_emails.length > 0) {
       // Use emails from payload
       hunterEmailsData = [{
