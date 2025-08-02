@@ -30,6 +30,7 @@ import time  # Add time import for rate limiting
 import json
 import asyncio
 import httpx
+import aiohttp
 
 # Supabase setup (optional - will work without it)
 try:
@@ -629,7 +630,42 @@ async def search_jobs(request: JobSearchRequest):
             
                     try:
                         # STEP 1: Domain Search
-                        domain = job_scraper._find_company_domain(company, tracker)
+                        import asyncio
+                        import aiohttp
+                        
+                        # Make domain finding call async
+                        async def find_domain_async(company_name):
+                            try:
+                                url = "https://api.clearout.io/public/companies/autocomplete"
+                                params = {"query": company_name}
+                                
+                                async with aiohttp.ClientSession() as session:
+                                    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                                        if response.status == 200:
+                                            data = await response.json()
+                                            if data.get('status') == 'success' and data.get('data'):
+                                                # Get the best match with highest confidence
+                                                best_match = None
+                                                best_confidence = 0
+                                                
+                                                for company in data['data']:
+                                                    confidence = company.get('confidence_score', 0)
+                                                    if confidence > best_confidence and confidence >= 50:
+                                                        best_confidence = confidence
+                                                        best_match = company.get('domain')
+                                                
+                                                if best_match:
+                                                    logger.info(f"🌐 Found domain for {company_name}: {best_match}")
+                                                    return best_match
+                                        
+                                        logger.warning(f"⚠️  No domain found for {company_name}")
+                                        return None
+                                        
+                            except Exception as e:
+                                logger.error(f"❌ Domain finding failed for {company_name}: {e}")
+                                return None
+                        
+                        domain = await find_domain_async(company)
                         job['company_website'] = domain
                 
                         # STEP 2: LinkedIn Resolution (via OpenAI batch analysis)
